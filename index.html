@@ -349,6 +349,9 @@
           </div>
 
           <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="text" id="builderSearch" placeholder="Search closet to add..." class="flex-1 min-w-[150px] px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+            </div>
             <div class="flex flex-wrap gap-1" id="builderCatTabs">
               <button type="button" data-bcat="all" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-900 text-white">All</button>
               <button type="button" data-bcat="outerwear" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Outerwear</button>
@@ -434,11 +437,29 @@
         <div id="stClipStatus" class="hidden text-[11px] text-purple-900 font-medium"></div>
       </div>
 
-      <div id="seedTray" class="min-h-[48px] p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap gap-1.5 items-center"></div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <select id="seedPickerSelect" class="flex-1 min-w-[220px] px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"></select>
-        <button type="button" id="btnAddSeedPiece" class="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold">+ Add Anchor</button>
+      <div class="space-y-2.5">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Style-Around Tray (Optional Anchors)</span>
+            <span id="seedTrayCount" class="text-[11px] font-semibold text-blue-700">0 anchors</span>
+          </div>
+          <div id="seedTray" class="min-h-[56px] p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap gap-1.5 items-center"></div>
+        </div>
+        <div class="space-y-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="seedSearch" placeholder="Search pieces to anchor..." class="flex-1 min-w-[150px] px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div class="flex flex-wrap gap-1" id="seedCatTabs">
+            <button type="button" data-scat="all" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-900 text-white">All</button>
+            <button type="button" data-scat="outerwear" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Outerwear</button>
+            <button type="button" data-scat="top" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Tops</button>
+            <button type="button" data-scat="bottom" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Bottoms</button>
+            <button type="button" data-scat="shoes" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Shoes</button>
+            <button type="button" data-scat="accessory" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Accessories</button>
+          </div>
+          <div id="seedPickerList" class="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white"></div>
+          <p class="text-[10px] text-slate-500">Click pieces to lock/unlock them as anchors. Leave empty for full-closet suggestions.</p>
+        </div>
       </div>
     </div>
 
@@ -1680,6 +1701,7 @@
   let sizePairIds = new Set();
   let suggestMode = 'balanced';
   let seedItemIds = [];
+  let seedCatFilter = 'all';
   let lookbookLayout = {}; // { itemId: { xPct, yPct, scale, z } }
   let selectedLookbookId = null;
   let lbDragState = null;
@@ -2921,6 +2943,7 @@
 
             <div class="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
               <button type="button" data-action="edit" data-id="${it.id}" class="item-act text-xs font-semibold text-slate-700 hover:text-blue-700">Edit</button>
+              ${it.status === 'owned' ? `<button type="button" data-action="archive" data-id="${it.id}" class="item-act text-xs font-semibold text-amber-700 hover:text-amber-900">Archive</button>` : ''}
               ${it.status === 'wishlist' ? `<button type="button" data-action="promote" data-id="${it.id}" class="item-act text-xs font-semibold text-emerald-700 hover:text-emerald-900">Bought &rarr; Closet</button>` : ''}
 
               ${it.status === 'donated' ? `<button type="button" data-action="restore" data-id="${it.id}" class="item-act text-xs font-semibold text-blue-700">Restore</button>` : ''}
@@ -3242,7 +3265,12 @@
     }
 
     // Render Click-to-Add Picker List
-    const filteredPool = pool.filter(i => builderCatFilter === 'all' || i.category === builderCatFilter);
+    const bq = (document.getElementById('builderSearch') ? document.getElementById('builderSearch').value : '').trim().toLowerCase();
+    const filteredPool = pool.filter(i => {
+      if (builderCatFilter !== 'all' && i.category !== builderCatFilter) return false;
+      if (bq && !`${i.name} ${i.brand || ''} ${i.fabric || ''} ${i.category}`.toLowerCase().includes(bq)) return false;
+      return true;
+    });
     const pickerEl = document.getElementById('builderPickerList');
     pickerEl.innerHTML = filteredPool.length ? filteredPool.map(it => {
       const selected = builderItemIds.includes(it.id);
@@ -3287,16 +3315,25 @@
     const allSelectable = state.items.filter(i => i.status === 'owned' || i.status === 'wishlist' || i.status === 'tryon');
     seedItemIds = seedItemIds.filter(id => allSelectable.some(x => x.id === id));
 
+    document.querySelectorAll('.scat-btn').forEach(btn => {
+      btn.className = btn.dataset.scat === seedCatFilter
+        ? 'scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-900 text-white'
+        : 'scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200';
+    });
+
+    const cntEl = document.getElementById('seedTrayCount');
+    if (cntEl) cntEl.textContent = `${seedItemIds.length} anchor${seedItemIds.length === 1 ? '' : 's'}`;
+
     const trayEl = document.getElementById('seedTray');
     if (trayEl) {
       if (!seedItemIds.length) {
-        trayEl.innerHTML = `<span class="text-xs text-slate-400">No anchor pieces — generating full outfits across your closet.</span>`;
+        trayEl.innerHTML = `<span class="text-xs text-slate-400">Empty tray — generating full outfits across your closet, or click items below to lock anchors.</span>`;
       } else {
         trayEl.innerHTML = seedItemIds.map(id => {
           const it = allSelectable.find(x => x.id === id);
           if (!it) return '';
           const tag = it.status === 'tryon' ? 'Try-On' : (it.status === 'wishlist' ? 'Wishlist' : it.category);
-          return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${it.status === 'tryon' ? 'bg-purple-50 border-purple-300 text-purple-950' : it.status === 'wishlist' ? 'bg-blue-50 border-blue-200 text-blue-950' : 'bg-white border-slate-300 text-slate-800'} border text-xs font-medium">
+          return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${it.status === 'tryon' ? 'bg-purple-50 border-purple-300 text-purple-950' : it.status === 'wishlist' ? 'bg-blue-50 border-blue-200 text-blue-950' : 'bg-white border-slate-300 text-slate-800'} border text-xs font-medium shadow-2xs">
             <span class="w-2.5 h-2.5 rounded-full border border-slate-300" style="background:${safeHex(it.colorHex)}"></span>
             <span>${escapeHtml(it.name)}</span>
             <span class="text-[9px] uppercase font-bold opacity-70">${escapeHtml(tag)}</span>
@@ -3306,11 +3343,28 @@
       }
     }
 
-    const sel = document.getElementById('seedPickerSelect');
-    if (sel) {
-      const avail = allSelectable.filter(i => !seedItemIds.includes(i.id));
-      sel.innerHTML = `<option value="">Pick an Owned, Wishlist, or Try-On piece to style around...</option>` +
-        avail.map(i => `<option value="${i.id}">[${i.status === 'tryon' ? 'Try-On' : i.status === 'wishlist' ? 'Wishlist' : i.category.toUpperCase()}] ${escapeHtml(i.name)}</option>`).join('');
+    const pickerEl = document.getElementById('seedPickerList');
+    if (pickerEl) {
+      const sq = (document.getElementById('seedSearch') ? document.getElementById('seedSearch').value : '').trim().toLowerCase();
+      const filtered = allSelectable.filter(i => {
+        if (seedCatFilter !== 'all' && i.category !== seedCatFilter) return false;
+        if (sq && !`${i.name} ${i.brand || ''} ${i.fabric || ''} ${i.category}`.toLowerCase().includes(sq)) return false;
+        return true;
+      });
+      pickerEl.innerHTML = filtered.length ? filtered.map(it => {
+        const selected = seedItemIds.includes(it.id);
+        const badge = it.status === 'tryon' ? ' [Try-On]' : (it.status === 'wishlist' ? ' [Wishlist]' : '');
+        return `<button type="button" data-seed-toggle="${it.id}" class="seed-toggle w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-50 transition ${selected ? 'bg-blue-50/70' : ''}">
+          <span class="flex items-center gap-2 min-w-0">
+            <span class="w-3 h-3 rounded-full border border-slate-300 shrink-0" style="background:${safeHex(it.colorHex)}"></span>
+            <span class="text-xs font-medium text-slate-800 truncate">${escapeHtml(it.name)}${badge}</span>
+          </span>
+          <span class="flex items-center gap-2 shrink-0">
+            <span class="text-[10px] uppercase text-slate-400">${escapeHtml(it.category)}</span>
+            <span class="text-[11px] font-bold ${selected ? 'text-blue-700' : 'text-slate-400'}">${selected ? 'Anchored' : '+ Add'}</span>
+          </span>
+        </button>`;
+      }).join('') : `<div class="p-3 text-xs text-slate-400">No items in this category yet.</div>`;
     }
   }
 
@@ -4493,6 +4547,7 @@
       if (action === 'edit') openItemModal(id);
 
       else if (action === 'promote') { it.status = 'owned'; saveState(); renderAll(); showToast(`Moved ${it.name} to Owned Wardrobe!`); }
+      else if (action === 'archive') { it.status = 'donated'; saveState(); renderAll(); showToast(`Archived ${it.name} (restore anytime under Archived / Donated).`); }
       else if (action === 'restore') { it.status = 'owned'; saveState(); renderAll(); showToast(`Restored ${it.name} to Owned Wardrobe.`); }
       else if (action === 'delete') {
         openConfirmModal('Delete Piece?', `Remove "${it.name}" from your closet? Past logged outfits will keep its name.`, () => {
@@ -4616,6 +4671,8 @@
     document.getElementById(id).addEventListener('input', renderMatcherView);
     document.getElementById(id).addEventListener('change', renderMatcherView);
   });
+  document.getElementById('builderSearch').addEventListener('input', renderMatcherView);
+  document.getElementById('seedSearch').addEventListener('input', renderSeedTray);
   document.getElementById('builderCatTabs').addEventListener('click', e => {
     const btn = e.target.closest('.bcat-btn');
     if (!btn) return;
@@ -4772,10 +4829,19 @@
   });
 
   // Style-Around Anchor Tray & Quick In-Store Try-On Anchor
-  document.getElementById('btnAddSeedPiece').addEventListener('click', () => {
-    const id = document.getElementById('seedPickerSelect').value;
-    if (!id) return;
-    if (!seedItemIds.includes(id)) seedItemIds.push(id);
+  document.getElementById('seedCatTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.scat-btn');
+    if (!btn) return;
+    seedCatFilter = btn.dataset.scat;
+    renderSeedTray();
+  });
+
+  document.getElementById('seedPickerList').addEventListener('click', e => {
+    const btn = e.target.closest('.seed-toggle');
+    if (!btn) return;
+    const id = btn.dataset.seedToggle;
+    if (seedItemIds.includes(id)) seedItemIds = seedItemIds.filter(x => x !== id);
+    else seedItemIds.push(id);
     renderGeneratedOutfits();
   });
 
