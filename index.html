@@ -1994,6 +1994,26 @@
     return 60;
   }
 
+  function getSavedCity() {
+    return (state.settings && typeof state.settings.city === 'string' && state.settings.city.trim())
+      ? state.settings.city.trim()
+      : 'New York';
+  }
+
+  function setSavedCity(city) {
+    const clean = String(city || '').trim().slice(0, 80);
+    if (!clean) return;
+    state.settings = state.settings || {};
+    if (state.settings.city !== clean) {
+      state.settings.city = clean;
+      saveState();
+    }
+    const wEl = document.getElementById('weatherCity');
+    const rEl = document.getElementById('rCity');
+    if (wEl && document.activeElement !== wEl) wEl.value = clean;
+    if (rEl && document.activeElement !== rEl) rEl.value = clean;
+  }
+
   function getLogRecencyWeight(dateStr) {
     const hl = getRecencyHalfLife();
     if (!hl || hl <= 0) return 1.0;
@@ -2648,8 +2668,11 @@
     })) : [];
 
     const cleanSettings = (parsed.settings && typeof parsed.settings === 'object')
-      ? { recencyHalfLife: [0, 30, 60, 90].includes(Number(parsed.settings.recencyHalfLife)) ? Number(parsed.settings.recencyHalfLife) : 60 }
-      : { recencyHalfLife: 60 };
+      ? {
+          recencyHalfLife: [0, 30, 60, 90].includes(Number(parsed.settings.recencyHalfLife)) ? Number(parsed.settings.recencyHalfLife) : 60,
+          city: typeof parsed.settings.city === 'string' && parsed.settings.city.trim() ? parsed.settings.city.trim().slice(0, 80) : 'New York'
+        }
+      : { recencyHalfLife: 60, city: 'New York' };
 
     return { items: cleanItems, outfitLogs: cleanLogs, settings: cleanSettings };
   }
@@ -2797,6 +2820,8 @@
   }
 
   function renderKPIs() {
+    const wCityEl = document.getElementById('weatherCity');
+    if (wCityEl && document.activeElement !== wCityEl) wCityEl.value = getSavedCity();
     const owned = state.items.filter(i => i.status === 'owned');
     const wish = state.items.filter(i => i.status === 'wishlist');
     const clipCount = state.items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512).length;
@@ -3890,6 +3915,7 @@
           <div class="flex flex-wrap items-center justify-between gap-2">
             <span class="text-xs font-bold text-slate-900">${escapeHtml(log.date)} · ${log.temp}°F ${escapeHtml(log.weather)} · ${escapeHtml(log.occasion)} <span class="font-medium text-indigo-700 ml-1">(${Math.round(getLogRecencyWeight(log.date) * 100)}% wt)</span></span>
             <div class="flex items-center gap-1.5">
+              <button type="button" data-edit-log="${log.id}" class="edit-log-btn px-2 py-0.5 rounded-md border border-slate-300 hover:bg-slate-50 text-[10px] font-semibold text-slate-700">Edit</button>
               <button type="button" data-del-log="${log.id}" class="del-log-btn px-2 py-0.5 rounded-md border border-rose-200 hover:bg-rose-50 text-[10px] font-semibold text-rose-700">Delete</button>
               <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${worked ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${worked ? 'Worked Well' : 'Needs Adjustment'}</span>
             </div>
@@ -4253,26 +4279,33 @@
     }).join('');
   }
 
-  function openRateModal(itemIds, ctx) {
-    pendingRateOutfit = { itemIds, ctx };
-    pendingCulpritIds = new Set();
-    const names = itemIds.map(id => (state.items.find(x => x.id === id) || {}).name).filter(Boolean);
-    document.getElementById('rateOutfitSummary').innerHTML = `<strong>${names.map(escapeHtml).join(' + ')}</strong>`;
-    document.getElementById('rCity').value = (document.getElementById('weatherCity').value || 'New York').trim();
+  function openRateModal(itemIds, ctx, editLog) {
+    pendingRateOutfit = { itemIds, ctx, editLogId: editLog ? editLog.id : null };
+    pendingCulpritIds = new Set(editLog && Array.isArray(editLog.culpritIds) ? editLog.culpritIds : []);
+    const names = itemIds.map(id => {
+      const live = state.items.find(x => x.id === id);
+      if (live) return live.name;
+      const snap = editLog && editLog.itemSnapshots && editLog.itemSnapshots[id];
+      return snap ? snap.name : '';
+    }).filter(Boolean);
+    document.getElementById('rateOutfitSummary').innerHTML = `<strong>${names.map(escapeHtml).join(' + ')}</strong>${editLog ? `<br><span class="text-[11px] text-blue-800">Editing log from ${escapeHtml(editLog.date)}</span>` : ''}`;
+    document.getElementById('rCity').value = getSavedCity();
     document.getElementById('rPeriod').value = 'today_now';
-    document.getElementById('rTemp').value = ctx.temp;
-    document.getElementById('rWeather').value = ctx.weather;
-    document.getElementById('rOccasion').value = ctx.occasion || 'casual';
+    document.getElementById('rTemp').value = editLog ? editLog.temp : ctx.temp;
+    document.getElementById('rWeather').value = editLog ? editLog.weather : ctx.weather;
+    document.getElementById('rOccasion').value = editLog ? (editLog.occasion || 'casual') : (ctx.occasion || 'casual');
     const rws = document.getElementById('rWeatherStatus');
     rws.classList.add('hidden');
     rws.textContent = '';
-    document.getElementById('rAesthetic').value = 4;
-    document.getElementById('rAestheticVal').textContent = '4 / 5';
-    document.getElementById('rComfort').value = 4;
-    document.getElementById('rComfortVal').textContent = '4 / 5';
+    const aesVal = editLog ? editLog.aesthetic : 4;
+    const comfVal = editLog ? editLog.comfort : 4;
+    document.getElementById('rAesthetic').value = aesVal;
+    document.getElementById('rAestheticVal').textContent = `${aesVal} / 5`;
+    document.getElementById('rComfort').value = comfVal;
+    document.getElementById('rComfortVal').textContent = `${comfVal} / 5`;
     const hasTryOn = itemIds.some(id => { const x = state.items.find(i => i.id === id); return x && x.status === 'tryon'; });
-    document.getElementById('rThermal').value = hasTryOn ? 'unknown' : 'right';
-    document.getElementById('rNotes').value = '';
+    document.getElementById('rThermal').value = editLog ? (editLog.thermal || 'unknown') : (hasTryOn ? 'unknown' : 'right');
+    document.getElementById('rNotes').value = editLog ? (editLog.notes || '') : '';
     renderRateCulpritPills();
     document.getElementById('rateModal').classList.remove('hidden');
   }
@@ -4497,6 +4530,15 @@
       document.getElementById('sharedContextBar').classList.add('hidden');
       renderAll();
       showToast('Loaded into Live Pairing—inspect, tweak, or click Log & Rate!');
+    }
+
+    const editLogBtn = e.target.closest('.edit-log-btn');
+    if (editLogBtn) {
+      const log = state.outfitLogs.find(l => l.id === editLogBtn.dataset.editLog);
+      if (log) {
+        openRateModal(log.itemIds.slice(), { temp: log.temp, weather: log.weather, occasion: log.occasion }, log);
+      }
+      return;
     }
 
     const delLogBtn = e.target.closest('.del-log-btn');
@@ -5014,7 +5056,8 @@
   // Live Open-Meteo Weather Fetch (Any City + Hourly Time Window)
   document.getElementById('btnLiveWeather').addEventListener('click', async () => {
     const status = document.getElementById('weatherStatus');
-    const cityInput = (document.getElementById('weatherCity').value || 'New York').trim();
+    const cityInput = (document.getElementById('weatherCity').value || getSavedCity()).trim();
+    setSavedCity(cityInput);
     const period = document.getElementById('weatherPeriod').value;
     status.classList.remove('hidden');
     status.textContent = `Looking up ${cityInput} weather...`;
@@ -5097,7 +5140,8 @@
 
   document.getElementById('btnFetchLogWeather').addEventListener('click', async () => {
     const status = document.getElementById('rWeatherStatus');
-    const city = (document.getElementById('rCity').value || 'New York').trim();
+    const city = (document.getElementById('rCity').value || getSavedCity()).trim();
+    setSavedCity(city);
     const period = document.getElementById('rPeriod').value;
     status.classList.remove('hidden');
     status.textContent = `Fetching ${city} weather...`;
@@ -5157,32 +5201,58 @@
       const it = state.items.find(x => x.id === id);
       if (it) itemSnapshots[id] = { name: it.name, colorHex: safeHex(it.colorHex), category: it.category };
     });
-    state.outfitLogs.push({
-      id: 'l' + Date.now(),
-      date: logDate,
-      itemIds: pendingRateOutfit.itemIds,
-      itemSnapshots,
-      temp: loggedTemp,
-      weather: loggedWeather,
-      occasion: document.getElementById('rOccasion').value || pendingRateOutfit.ctx.occasion || 'casual',
-      aesthetic: Number(document.getElementById('rAesthetic').value),
-      comfort: Number(document.getElementById('rComfort').value),
-      thermal: document.getElementById('rThermal').value,
-      culpritIds: Array.from(pendingCulpritIds),
-      lookbookLayout: pendingRateOutfit.itemIds.reduce((acc, id) => {
-        if (lookbookLayout[id]) acc[id] = { ...lookbookLayout[id] };
-        return acc;
-      }, {}),
-      notes: document.getElementById('rNotes').value.trim()
-    });
-    pendingRateOutfit.itemIds.forEach(id => {
-      const it = state.items.find(x => x.id === id);
-      if (it && it.status === 'owned' && !it.wearFreq) it.wearFreq = 'regular';
-    });
-    saveState();
-    document.getElementById('rateModal').classList.add('hidden');
-    renderAll();
-    showToast('Outfit logged! Score & Certainty updated across your closet.');
+    const occVal = document.getElementById('rOccasion').value || pendingRateOutfit.ctx.occasion || 'casual';
+    const aesVal = Number(document.getElementById('rAesthetic').value);
+    const comfVal = Number(document.getElementById('rComfort').value);
+    const thermVal = document.getElementById('rThermal').value;
+    const notesVal = document.getElementById('rNotes').value.trim();
+    const culpritArr = Array.from(pendingCulpritIds);
+
+    if (pendingRateOutfit.editLogId) {
+      const target = state.outfitLogs.find(l => l.id === pendingRateOutfit.editLogId);
+      if (target) {
+        target.temp = loggedTemp;
+        target.weather = loggedWeather;
+        target.occasion = occVal;
+        target.aesthetic = aesVal;
+        target.comfort = comfVal;
+        target.thermal = thermVal;
+        target.culpritIds = culpritArr;
+        target.notes = notesVal;
+        if (pVal.startsWith('yest_')) target.date = logDate;
+      }
+      saveState();
+      closeRateModal();
+      renderAll();
+      showToast('Updated outfit log & refreshed model scores!');
+    } else {
+      state.outfitLogs.push({
+        id: 'l' + Date.now(),
+        date: logDate,
+        itemIds: pendingRateOutfit.itemIds,
+        itemSnapshots,
+        temp: loggedTemp,
+        weather: loggedWeather,
+        occasion: occVal,
+        aesthetic: aesVal,
+        comfort: comfVal,
+        thermal: thermVal,
+        culpritIds: culpritArr,
+        lookbookLayout: pendingRateOutfit.itemIds.reduce((acc, id) => {
+          if (lookbookLayout[id]) acc[id] = { ...lookbookLayout[id] };
+          return acc;
+        }, {}),
+        notes: notesVal
+      });
+      pendingRateOutfit.itemIds.forEach(id => {
+        const it = state.items.find(x => x.id === id);
+        if (it && it.status === 'owned' && !it.wearFreq) it.wearFreq = 'regular';
+      });
+      saveState();
+      closeRateModal();
+      renderAll();
+      showToast('Outfit logged! Score & Certainty updated across your closet.');
+    }
   });
 
   // Inspo Controls
@@ -5589,6 +5659,9 @@
       showToast('Cleared wardrobe—ready to add your own pieces.');
     });
   });
+
+  document.getElementById('weatherCity').addEventListener('change', e => setSavedCity(e.target.value));
+  document.getElementById('rCity').addEventListener('change', e => setSavedCity(e.target.value));
 
   // Init
   renderAll();
