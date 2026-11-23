@@ -124,7 +124,7 @@
       <button type="button" id="btnExport" class="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition" title="Export closet JSON backup">Export</button>
       <label class="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer" title="Import closet JSON backup">
         Import
-        <input type="file" id="inputImport" accept="application/json" class="hidden">
+        <input type="file" id="inputImport" accept=".json,application/json,text/plain" class="hidden">
       </label>
       <button type="button" id="btnClearAll" class="px-2.5 py-1.5 rounded-lg border border-rose-200 text-xs font-medium text-rose-600 hover:bg-rose-50 transition" title="Clear all saved wardrobe data">Start Empty</button>
       <button type="button" id="btnAddItemOpen" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold transition flex items-center gap-1.5">
@@ -1613,7 +1613,7 @@
     t.textContent = msg;
     t.classList.remove('hidden');
     clearTimeout(showToast._tid);
-    showToast._tid = setTimeout(() => t.classList.add('hidden'), 3200);
+    showToast._tid = setTimeout(() => t.classList.add('hidden'), 4800);
   }
 
   // Resolve effective attribute: explicit user tag -> CLIP zero-shot inference -> null (unknown)
@@ -5214,8 +5214,17 @@
     showToast(state.settings.recencyHalfLife ? `Recency decay set to ${state.settings.recencyHalfLife}-day half-life.` : 'Recency decay turned off (all logs weighted equally).');
   });
 
+  function isInAppBrowser() {
+    const ua = (navigator.userAgent || '').toLowerCase();
+    return /fban|fbav|fb_iab|messenger|instagram|micromessenger|line\/|tiktok|snapchat|twitter|wv\)/.test(ua);
+  }
+
   // Export (Native Mobile Share Sheet on phones -> iCloud/Drive/AirDrop, with desktop download fallback)
   document.getElementById('btnExport').addEventListener('click', async () => {
+    if (isInAppBrowser()) {
+      showToast('Export is blocked inside in-app browsers (like Messenger). Tap ⋯ → Open in Safari or Chrome to export and save reliably.');
+      return;
+    }
     const filename = `atelier-closet-backup-${formatLocalDate()}.json`;
     const jsonStr = JSON.stringify(state, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
