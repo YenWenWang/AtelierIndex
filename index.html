@@ -126,6 +126,7 @@
         Import
         <input type="file" id="inputImport" accept="application/json" class="hidden">
       </label>
+      <button type="button" id="btnClearAll" class="px-2.5 py-1.5 rounded-lg border border-rose-200 text-xs font-medium text-rose-600 hover:bg-rose-50 transition" title="Clear all saved wardrobe data">Start Empty</button>
       <button type="button" id="btnAddItemOpen" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold transition flex items-center gap-1.5">
         <span>+ Add Piece</span>
       </button>
@@ -185,7 +186,6 @@
         </select>
         <button type="button" id="btnBatchClip" class="px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition">Batch Embed Photos (CLIP)</button>
         <button type="button" id="btnResetDemo" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100">Reset Sample</button>
-        <button type="button" id="btnClearAll" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50">Start Empty</button>
       </div>
     </div>
 
@@ -1526,6 +1526,44 @@
   const cutoutCache = new Map(); // photoDataUrl -> transparent PNG dataUrl
   const cutoutPending = new Set();
 
+  // IndexedDB wrapper (hundreds of MB local storage for mobile & large photo closets)
+  const IDB_NAME = 'atelier_index_idb_v1';
+  const IDB_STORE = 'closet_state';
+  let idbAvailable = false;
+
+  function openClosetDB() {
+    return new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') { reject(new Error('No IndexedDB')); return; }
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbGetMain() {
+    const db = await openClosetDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get('main');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbPutMain(data) {
+    const db = await openClosetDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(data, 'main');
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('atelier_index_closet_v1');
@@ -1540,11 +1578,34 @@
   }
 
   function saveState() {
+    let lsOk = false;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-      showToast('Browser storage full—try exporting JSON backup.');
-    }
+      lsOk = true;
+    } catch (e) {}
+    idbPutMain(state).then(() => {
+      idbAvailable = true;
+      const ind = document.getElementById('saveIndicator');
+      if (ind) ind.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>Saved (IDB)';
+    }).catch(() => {
+      if (!lsOk) showToast('Browser storage full—tap Export to save a JSON backup.');
+    });
+  }
+
+  async function hydrateFromIndexedDB() {
+    try {
+      const saved = await idbGetMain();
+      idbAvailable = true;
+      if (saved && Array.isArray(saved.items) && Array.isArray(saved.outfitLogs)) {
+        state = saved;
+        renderAll();
+      } else {
+        // Migrate existing localStorage / starter data into IndexedDB seamlessly
+        await idbPutMain(state);
+      }
+      const ind = document.getElementById('saveIndicator');
+      if (ind) ind.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>Saved (IDB)';
+    } catch (e) {}
   }
 
   function showToast(msg) {
@@ -5153,16 +5214,36 @@
     showToast(state.settings.recencyHalfLife ? `Recency decay set to ${state.settings.recencyHalfLife}-day half-life.` : 'Recency decay turned off (all logs weighted equally).');
   });
 
-  // Export / Import / Reset / Empty
-  document.getElementById('btnExport').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  // Export (Native Mobile Share Sheet on phones -> iCloud/Drive/AirDrop, with desktop download fallback)
+  document.getElementById('btnExport').addEventListener('click', async () => {
+    const filename = `atelier-closet-backup-${formatLocalDate()}.json`;
+    const jsonStr = JSON.stringify(state, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+
+    try {
+      if (typeof File !== 'undefined' && navigator.share && navigator.canShare) {
+        const file = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Atelier Index Closet Backup',
+            text: `${state.items.length} wardrobe & wishlist pieces with 512-D CLIP vectors.`,
+            files: [file]
+          });
+          showToast('Shared closet JSON backup!');
+          return;
+        }
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `atelier-closet-backup-${formatLocalDate()}.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Exported local closet JSON backup (includes 512-D CLIP vectors).');
+    showToast('Downloaded closet JSON backup (includes 512-D CLIP vectors).');
   });
 
   document.getElementById('btnConfirmCancel').addEventListener('click', closeConfirmModal);
@@ -5248,6 +5329,7 @@
 
   // Init
   renderAll();
+  hydrateFromIndexedDB();
 })();
 </script>
 </body>
