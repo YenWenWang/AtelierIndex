@@ -5898,17 +5898,22 @@
       else if (action === 'archive') { it.status = 'donated'; saveState(); renderAll(); showToast(`Archived ${it.name} (restore anytime under Archived / Donated).`); }
       else if (action === 'restore') { it.status = 'owned'; saveState(); renderAll(); showToast(`Restored ${it.name} to Owned Wardrobe.`); }
       else if (action === 'delete') {
-        openConfirmModal('Delete Piece?', `Remove "${it.name}" from your closet? Past logged outfits will keep its name.`, () => {
-          state.outfitLogs.forEach(log => {
-            if (log.itemIds.includes(id)) {
-              log.itemSnapshots = log.itemSnapshots || {};
-              log.itemSnapshots[id] = { name: it.name, colorHex: safeHex(it.colorHex), category: it.category };
-            }
-          });
+        const affectedLogs = state.outfitLogs.filter(log => Array.isArray(log.itemIds) && log.itemIds.includes(id)).length;
+        const confirmMsg = affectedLogs > 0
+          ? `Delete "${it.name}" and ${affectedLogs} logged outfit${affectedLogs === 1 ? '' : 's'} using it? (Use Archive instead if you want to keep outfit history.)`
+          : `Delete "${it.name}" permanently?`;
+        openConfirmModal('Delete Piece?', confirmMsg, () => {
+          state.outfitLogs = state.outfitLogs.filter(log => !(Array.isArray(log.itemIds) && log.itemIds.includes(id)));
           state.items = state.items.filter(x => x.id !== id);
+          builderItemIds = builderItemIds.filter(x => x !== id);
+          seedItemIds = seedItemIds.filter(x => x !== id);
+          if (typeof excludedItemIds !== 'undefined' && excludedItemIds instanceof Set) excludedItemIds.delete(id);
+          if (typeof sizePairIds !== 'undefined' && sizePairIds instanceof Set) sizePairIds.delete(id);
           saveState();
           renderAll();
-          showToast('Removed piece.');
+          showToast(affectedLogs > 0
+            ? `Deleted "${it.name}" and ${affectedLogs} outfit log${affectedLogs === 1 ? '' : 's'}.`
+            : `Deleted "${it.name}".`);
         });
       }
     }
