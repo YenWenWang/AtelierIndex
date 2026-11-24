@@ -4019,66 +4019,154 @@
     }
     const tasteUnit = hasTasteSignal ? l2Normalize(gTaste) : null;
 
-    // Centered Gram-Schmidt Orthogonalization across 25 diverse starting seeds in fashion-difference space
+    // 1. Build TASTE SUBSPACE (directions that strongly drive your taste — kept PARALLEL, never cancelled!)
     const mu = banks.fashionMean;
-    const orthoBasis = []; // mutually perpendicular unit vectors u_k (orthogonal to mu and to each other)
+    function projectOutBasis(vec, basis) {
+      const out = vec.slice();
+      for (let j = 0; j < basis.length; j++) {
+        const bj = basis[j];
+        let proj = 0;
+        for (let d = 0; d < 512; d++) proj += out[d] * bj[d];
+        for (let d = 0; d < 512; d++) out[d] -= proj * bj[d];
+      }
+      return out;
+    }
+
+    const tasteRaw = [];
+    if (tasteUnit) tasteRaw.push(tasteUnit);
+    // Add top high-rated outfit vectors (aesthetic >= 4) to capture multi-modal personal taste
+    const topLogs = state.outfitLogs
+      .filter(l => (l.aesthetic || 0) >= 4)
+      .slice()
+      .sort((a, b) => (b.aesthetic - a.aesthetic) || (b.date > a.date ? 1 : -1))
+      .slice(0, 4);
+    topLogs.forEach(log => {
+      const lItems = log.itemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
+      const lVec = computeOutfitClipEmbedding(lItems);
+      if (lVec) tasteRaw.push(lVec);
+    });
+
+    const tasteBasis = [];
+    for (let i = 0; i < tasteRaw.length && tasteBasis.length < 4; i++) {
+      let ut = projectOutBasis(tasteRaw[i], [mu, ...tasteBasis]);
+      const norm = Math.sqrt(ut.reduce((s, x) => s + x * x, 0));
+      if (norm > 1e-3) {
+        for (let d = 0; d < 512; d++) ut[d] /= norm;
+        tasteBasis.push(ut);
+      }
+    }
+
+    // 2. Build TASTE-NEUTRAL OWNED BASIS (owned closet components perpendicular to tasteBasis!)
+    // Orthogonalizing against this removes duplicates WITHOUT cancelling your strong taste directions.
+    const ownedNeutralBasis = [];
+    for (let i = 0; i < ownedVecs.length && ownedNeutralBasis.length < 180; i++) {
+      let uo = projectOutBasis(ownedVecs[i], [mu, ...tasteBasis, ...ownedNeutralBasis]);
+      const norm = Math.sqrt(uo.reduce((s, x) => s + x * x, 0));
+      if (norm > 1e-3) {
+        for (let d = 0; d < 512; d++) uo[d] /= norm;
+        ownedNeutralBasis.push(uo);
+      }
+    }
+
+    // 3. Optimize 25 vectors:
+    //    - On the 1-4D taste subspace: SOFT partial Gram-Schmidt (25% repulsion between gaps, 15% from owned mean)
+    //      so gaps stay generally aligned with your taste while fanning out slightly non-parallel for exploration!
+    //    - On the ~508 taste-neutral dimensions: STRICT 100% Gram-Schmidt perpendicular to owned & mutual gaps.
+    const gapNeutralBasis = [];
+    const gapTasteDirs = [];
     const optVecs = [];
 
     for (let k = 0; k < CLIP_DECODE_TYPES.length; k++) {
       let v = banks.typeVecs[k].slice();
 
-      // 4 gradient ascent steps: pull toward user's 512-D taste, repel from redundant owned items
-      for (let step = 0; step < 4; step++) {
+      for (let step = 0; step < 3; step++) {
         const grad = new Array(512).fill(0);
         if (tasteUnit) {
-          for (let d = 0; d < 512; d++) grad[d] += 0.22 * tasteUnit[d];
+          for (let d = 0; d < 512; d++) grad[d] += 0.25 * tasteUnit[d];
         }
         ownedVecs.forEach(ov => {
           const sim = cosineSimilarity(v, ov);
-          if (sim > 0.72) {
-            const push = (sim - 0.72) * 0.45;
+          if (sim > 0.80) {
+            const push = (sim - 0.80) * 0.5;
             for (let d = 0; d < 512; d++) grad[d] -= push * ov[d];
           }
         });
-        for (let d = 0; d < 512; d++) v[d] += 0.35 * grad[d];
+        for (let d = 0; d < 512; d++) v[d] += 0.30 * grad[d];
         v = l2Normalize(v);
       }
 
-      // Project into centered fashion-difference subspace (orthogonal to fashionMean)
-      let u = v.slice();
-      const dotMu = cosineSimilarity(u, mu);
-      for (let d = 0; d < 512; d++) u[d] -= dotMu * mu[d];
-
-      // Strict Gram-Schmidt orthogonalization against all previously accepted u_0 ... u_{k-1}
-      for (let j = 0; j < orthoBasis.length; j++) {
-        const bj = orthoBasis[j];
+      // A) Taste-subspace component (raw coordinates inside 1-4D tasteBasis)
+      const isTasteExplorer = (k % 4 === 3);
+      const vTaste = new Array(512).fill(0);
+      for (let j = 0; j < tasteBasis.length; j++) {
+        const bj = tasteBasis[j];
         let proj = 0;
-        for (let d = 0; d < 512; d++) proj += u[d] * bj[d];
-        for (let d = 0; d < 512; d++) u[d] -= proj * bj[d];
+        for (let d = 0; d < 512; d++) proj += v[d] * bj[d];
+        for (let d = 0; d < 512; d++) vTaste[d] += proj * bj[d];
       }
-      const uNorm = Math.sqrt(u.reduce((s, x) => s + x * x, 0)) || 1;
-      for (let d = 0; d < 512; d++) u[d] /= uNorm;
-      orthoBasis.push(u);
+      // Partial Gram-Schmidt inside the 1-4D taste subspace so vectors fan out slightly non-parallel!
+      const tasteRepel = isTasteExplorer ? 0.35 : 0.18;
+      if (gapTasteDirs.length && tasteBasis.length >= 2) {
+        // Subtract a small fraction of the average recent taste direction to gently rotate inside 1-4D taste space
+        const avgPrev = new Array(512).fill(0);
+        gapTasteDirs.forEach(gt => { for (let d = 0; d < 512; d++) avgPrev[d] += gt[d]; });
+        const apNorm = Math.sqrt(avgPrev.reduce((s, x) => s + x * x, 0)) || 1;
+        for (let d = 0; d < 512; d++) avgPrev[d] /= apNorm;
+        let dotPrev = 0;
+        for (let d = 0; d < 512; d++) dotPrev += vTaste[d] * avgPrev[d];
+        for (let d = 0; d < 512; d++) vTaste[d] -= tasteRepel * dotPrev * avgPrev[d];
+      }
+      const vtNorm = Math.sqrt(vTaste.reduce((s, x) => s + x * x, 0));
+      if (vtNorm > 1e-4) {
+        const vtUnit = vTaste.map(x => x / vtNorm);
+        gapTasteDirs.push(vtUnit);
+        for (let d = 0; d < 512; d++) vTaste[d] = vtUnit[d];
+      }
 
-      // Reconstruct valid 512-D CLIP vector on the fashion cone with orthogonal direction u_k
+      // B) Taste-neutral component (strictly 100% orthogonal to ownedNeutralBasis AND previous gapNeutralBasis!)
+      let uNeutral = projectOutBasis(v, [mu, ...tasteBasis, ...ownedNeutralBasis, ...gapNeutralBasis]);
+      const unNorm = Math.sqrt(uNeutral.reduce((s, x) => s + x * x, 0)) || 1;
+      for (let d = 0; d < 512; d++) uNeutral[d] /= unNorm;
+      gapNeutralBasis.push(uNeutral);
+
+      // Reconstruct: fashion cone center + slightly fanned taste component + strictly perpendicular novel component
       const vStar = new Array(512);
-      for (let d = 0; d < 512; d++) vStar[d] = 0.55 * mu[d] + 0.835 * u[d];
-      optVecs.push(l2Normalize(vStar));
+      if (vtNorm > 1e-4) {
+        // Explorer slots tilt further away from the taste axis (smaller tW, larger nW)
+        const tW = isTasteExplorer ? 0.20 : 0.34;
+        const nW = isTasteExplorer ? 0.84 : 0.79;
+        for (let d = 0; d < 512; d++) vStar[d] = 0.50 * mu[d] + tW * vTaste[d] + nW * uNeutral[d];
+      } else {
+        for (let d = 0; d < 512; d++) vStar[d] = 0.55 * mu[d] + 0.835 * uNeutral[d];
+      }
+      optVecs.push({ vec: l2Normalize(vStar), isTasteExplorer });
     }
 
-    // Measure empirical orthogonality (mean |cos(u_i, u_j)| across all 300 pairs)
+    // Measure empirical orthogonality on the taste-neutral subspace
     let sumAbsCos = 0, pairCount = 0;
-    for (let i = 0; i < orthoBasis.length; i++) {
-      for (let j = i + 1; j < orthoBasis.length; j++) {
+    for (let i = 0; i < gapNeutralBasis.length; i++) {
+      for (let j = i + 1; j < gapNeutralBasis.length; j++) {
         let dot = 0;
-        for (let d = 0; d < 512; d++) dot += orthoBasis[i][d] * orthoBasis[j][d];
+        for (let d = 0; d < 512; d++) dot += gapNeutralBasis[i][d] * gapNeutralBasis[j][d];
         sumAbsCos += Math.abs(dot);
         pairCount++;
       }
     }
+    let sumOwnedCos = 0, ownedPairCount = 0;
+    for (let i = 0; i < gapNeutralBasis.length; i++) {
+      for (let j = 0; j < ownedNeutralBasis.length; j++) {
+        let dot = 0;
+        for (let d = 0; d < 512; d++) dot += gapNeutralBasis[i][d] * ownedNeutralBasis[j][d];
+        sumOwnedCos += Math.abs(dot);
+        ownedPairCount++;
+      }
+    }
     gapOrthoStats = {
       count: optVecs.length,
-      avgAbsCos: pairCount ? (sumAbsCos / pairCount).toFixed(3) : '0.000'
+      tasteDim: tasteBasis.length,
+      ownedBasisDim: ownedNeutralBasis.length,
+      avgAbsCos: pairCount ? (sumAbsCos / pairCount).toFixed(3) : '0.000',
+      avgOwnedCos: ownedPairCount ? (sumOwnedCos / ownedPairCount).toFixed(3) : '0.000'
     };
 
     if (onProgress) onProgress('Decoding 25 orthogonal vectors into concrete garment recipes & scoring...');
@@ -4088,7 +4176,8 @@
     const decoded = [];
 
     for (let k = 0; k < optVecs.length; k++) {
-      const vStar = optVecs[k];
+      const vStar = optVecs[k].vec;
+      const isTasteExplorer = optVecs[k].isTasteExplorer;
       // Decode garment type, color, fabric, silhouette via CLIP bank cosine similarity (with light anti-collapse)
       let bestTypeIdx = 0, bestTypeScore = -99;
       for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
@@ -4143,7 +4232,8 @@
         seasons,
         clipEmbedding: vStar,
         clipInferred: meta.inferred,
-        why: `Decoded from orthogonal 512-D vector #${k + 1} · ${gFab.label} · Warmth ${warmth}/5 · Formality ${formality}/5.`
+        isTasteExplorer,
+        why: `Decoded from orthogonal 512-D vector #${k + 1}${isTasteExplorer ? ' (Taste Explorer)' : ''} · ${gFab.label} · Warmth ${warmth}/5 · Formality ${formality}/5.`
       });
     }
 
@@ -4215,7 +4305,7 @@
     filterBar.classList.toggle('hidden', !isSynth);
     if (isSynth && gapOrthoStats) {
       orthoBadge.classList.remove('hidden');
-      orthoBadge.textContent = `${gapOrthoStats.count} Orthogonal Vectors · Avg |cos| ${gapOrthoStats.avgAbsCos}`;
+      orthoBadge.textContent = `${gapOrthoStats.count} Gaps · ∥ Taste (${gapOrthoStats.tasteDim}D) · ⊥ Neutral Owned (${gapOrthoStats.avgOwnedCos}) · ⊥ Mutual (${gapOrthoStats.avgAbsCos})`;
     } else {
       orthoBadge.classList.add('hidden');
     }
@@ -4253,6 +4343,7 @@
                 <h4 class="text-sm font-bold text-slate-900">${escapeHtml(arch.name)}</h4>
                 <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold uppercase">${escapeHtml(arch.category)}</span>
                 <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">512-D Decoded</span>
+                ${arch.isTasteExplorer ? `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 text-[10px] font-semibold">Taste Explore</span>` : ''}
               </div>
               <p class="text-xs text-slate-600 mt-0.5">${escapeHtml(arch.why)}</p>
             </div>
