@@ -118,6 +118,9 @@
         <span id="clipDot" class="w-2 h-2 rounded-full bg-indigo-500"></span>
         <span id="clipStatusText">Load CLIP Vision</span>
       </button>
+      <span id="modelUpdatingPill" class="hidden inline-flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full font-medium">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>Updating model…
+      </span>
       <span id="saveIndicator" class="hidden xl:inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full font-medium">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>Saved locally
       </span>
@@ -2391,6 +2394,52 @@
     return x;
   }
 
+  // Exact Cholesky decomposition (K = L L^T) for symmetric positive-definite Ridge matrices
+  function choleskyDecompose(A) {
+    const n = A.length;
+    const L = Array.from({ length: n }, () => new Float64Array(n));
+    for (let i = 0; i < n; i++) {
+      const Li = L[i];
+      for (let j = 0; j <= i; j++) {
+        const Lj = L[j];
+        let sum = A[i][j];
+        for (let k = 0; k < j; k++) sum -= Li[k] * Lj[k];
+        if (i === j) {
+          Li[j] = Math.sqrt(Math.max(1e-12, sum));
+        } else {
+          Li[j] = Lj[j] > 1e-12 ? (sum / Lj[j]) : 0;
+        }
+      }
+    }
+    return L;
+  }
+
+  // O(n^2) forward solve: L z = b  (note: ||z||^2 == b^T K^-1 b exactly!)
+  function choleskyForward(L, b) {
+    const n = b.length;
+    const z = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const Li = L[i];
+      let sum = b[i];
+      for (let j = 0; j < i; j++) sum -= Li[j] * z[j];
+      z[i] = Li[i] > 1e-12 ? (sum / Li[i]) : 0;
+    }
+    return z;
+  }
+
+  // O(n^2) full solve: K x = L L^T x = b
+  function choleskySolve(L, b) {
+    const n = b.length;
+    const z = choleskyForward(L, b);
+    const x = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      let sum = z[i];
+      for (let j = i + 1; j < n; j++) sum -= L[j][i] * x[j];
+      x[i] = L[i][i] > 1e-12 ? (sum / L[i][i]) : 0;
+    }
+    return x;
+  }
+
   // Thermal kernel: 65% clo insulation RBF + 35% full 512-D CLIP linear kernel
   function thermalKernel(cloA, vecA, cloB, vecB) {
     const dClo = cloA - cloB;
@@ -2402,8 +2451,31 @@
     return kClo;
   }
 
-  // Fit Dual Ridge Regression on logged thermal residuals: deltaT = T_obs - T_clo
-  function buildDualRidgeThermalModel() {
+  function choleskyForwardFlat(Lflat, n, b) {
+    const z = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const row = i * n;
+      let sum = b[i];
+      for (let j = 0; j < i; j++) sum -= Lflat[row + j] * z[j];
+      const diag = Lflat[row + i];
+      z[i] = diag > 1e-12 ? (sum / diag) : 0;
+    }
+    return z;
+  }
+
+  function choleskySolveFlat(Lflat, n, b) {
+    const z = choleskyForwardFlat(Lflat, n, b);
+    const x = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      let sum = z[i];
+      for (let j = i + 1; j < n; j++) sum -= Lflat[j * n + i] * x[j];
+      const diag = Lflat[i * n + i];
+      x[i] = diag > 1e-12 ? (sum / diag) : 0;
+    }
+    return x;
+  }
+
+  function collectThermalSamples() {
     const samples = [];
     state.outfitLogs.forEach(log => {
       if (!log.thermal || log.thermal === 'unknown') return;
@@ -2414,9 +2486,33 @@
       const T_obs = Number(log.temp) + (log.thermal === 'cold' ? 8 : log.thermal === 'hot' ? -8 : 0);
       samples.push({ I_cl, vec512, deltaT: T_obs - T_clo });
     });
+    return samples;
+  }
 
+  function wrapThermalRidgeModel(samples, alpha, Lflat) {
     const n = samples.length;
     if (!n) return { n: 0, predict: (I_cl, vec512, T_clo) => ({ T_ideal: T_clo, deltaT: 0, thermalCert: 0 }) };
+    return {
+      n,
+      predict(I_cl, vec512, T_clo) {
+        const kStar = samples.map(s => thermalKernel(I_cl, vec512, s.I_cl, s.vec512));
+        let deltaHat = 0;
+        for (let i = 0; i < n; i++) deltaHat += alpha[i] * kStar[i];
+        deltaHat = Math.max(-18, Math.min(18, deltaHat));
+        const z = choleskyForwardFlat(Lflat, n, kStar);
+        let explained = 0;
+        for (let i = 0; i < n; i++) explained += z[i] * z[i];
+        const thermalCert = Math.max(0, Math.min(1, explained));
+        return { T_ideal: Math.max(15, Math.min(90, T_clo + deltaHat)), deltaT: deltaHat, thermalCert };
+      }
+    };
+  }
+
+  // Fit Dual Ridge Regression on logged thermal residuals: deltaT = T_obs - T_clo
+  function buildDualRidgeThermalModel() {
+    const samples = collectThermalSamples();
+    const n = samples.length;
+    if (!n) return wrapThermalRidgeModel([], [], new Float64Array(0));
 
     const lambda = 0.45;
     const K = Array.from({ length: n }, () => new Array(n).fill(0));
@@ -2429,23 +2525,11 @@
       }
       K[i][i] += lambda;
     }
-    const alpha = solveLinearSystem(K, y);
-
-    return {
-      n,
-      predict(I_cl, vec512, T_clo) {
-        const kStar = samples.map(s => thermalKernel(I_cl, vec512, s.I_cl, s.vec512));
-        let deltaHat = 0;
-        for (let i = 0; i < n; i++) deltaHat += alpha[i] * kStar[i];
-        deltaHat = Math.max(-18, Math.min(18, deltaHat));
-        // Posterior variance reduction (how strongly training logs inform this point)
-        const vVec = solveLinearSystem(K, kStar);
-        let explained = 0;
-        for (let i = 0; i < n; i++) explained += kStar[i] * vVec[i];
-        const thermalCert = Math.max(0, Math.min(1, explained));
-        return { T_ideal: Math.max(15, Math.min(90, T_clo + deltaHat)), deltaT: deltaHat, thermalCert };
-      }
-    };
+    const L = choleskyDecompose(K);
+    const Lflat = new Float64Array(n * n);
+    for (let i = 0; i < n; i++) Lflat.set(L[i], i * n);
+    const alpha = choleskySolveFlat(Lflat, n, y);
+    return wrapThermalRidgeModel(samples, alpha, Lflat);
   }
 
   // ---------- WEIGHTED DUAL RIDGE REGRESSION FOR 512-D AESTHETIC & PAIRWISE COMPATIBILITY ----------
@@ -2473,7 +2557,7 @@
     return baseSim * occFactor;
   }
 
-  function buildDualRidgeAestheticModel() {
+  function collectAestheticSamples() {
     const samples = [];
     const PRIOR_MEAN = 65;
 
@@ -2486,13 +2570,11 @@
       const culprits = new Set(Array.isArray(log.culpritIds) ? log.culpritIds : []);
       const baseRating = ((log.aesthetic * 0.65 + log.comfort * 0.35 - 1) / 4) * 100;
 
-      // Full outfit observation (conditioned on logged occasion)
       const logOcc = log.occasion || 'casual';
       const vMean = computeOutfitClipEmbedding(clipItems);
       const hPair = computeOutfitInteractionVector(clipItems);
       samples.push({ vMean, hPair, occ: logOcc, residual: baseRating - PRIOR_MEAN, recencyW });
 
-      // If user tagged specific culprit(s), add explicit negative pairwise observations for culprit pairs
       if (culprits.size > 0) {
         for (let a = 0; a < clipItems.length; a++) {
           for (let b = a + 1; b < clipItems.length; b++) {
@@ -2510,9 +2592,44 @@
         }
       }
     });
+    return samples;
+  }
 
+  function wrapAestheticRidgeModel(samples, alpha, Lflat) {
     const n = samples.length;
-    if (!n) return { n: 0, samples: [], K: [], alpha: [], predict: () => ({ score: null, cert: 0 }) };
+    const PRIOR_MEAN = 65;
+    if (!n) return { n: 0, samples: [], alpha: [], solveK: () => [], quadForm: () => 0, predict: () => ({ score: null, cert: 0 }) };
+    return {
+      n,
+      samples,
+      alpha,
+      solveK(b) { return choleskySolveFlat(Lflat, n, b); },
+      quadForm(b) {
+        const z = choleskyForwardFlat(Lflat, n, b);
+        let s = 0;
+        for (let i = 0; i < n; i++) s += z[i] * z[i];
+        return s;
+      },
+      predict(vMean, hPair, occ) {
+        if (!vMean) return { score: null, cert: 0 };
+        const kStar = samples.map(s => aestheticKernel(vMean, hPair, occ, s.vMean, s.hPair, s.occ));
+        let delta = 0;
+        for (let i = 0; i < n; i++) delta += alpha[i] * kStar[i];
+        const predScore = Math.round(Math.max(12, Math.min(98, PRIOR_MEAN + delta)));
+
+        const z = choleskyForwardFlat(Lflat, n, kStar);
+        let explained = 0;
+        for (let i = 0; i < n; i++) explained += z[i] * z[i];
+        const cert = Math.max(0, Math.min(1, explained));
+        return { score: predScore, cert };
+      }
+    };
+  }
+
+  function buildDualRidgeAestheticModel() {
+    const samples = collectAestheticSamples();
+    const n = samples.length;
+    if (!n) return wrapAestheticRidgeModel([], [], new Float64Array(0));
 
     const lambda = 0.40;
     const K = Array.from({ length: n }, () => new Array(n).fill(0));
@@ -2523,31 +2640,13 @@
         K[i][j] = val;
         K[j][i] = val;
       }
-      // Weighted Dual Ridge: recency decay scales effective regularization (lambda / w_i)
       K[i][i] += lambda / Math.max(0.15, samples[i].recencyW);
     }
-    const alpha = solveLinearSystem(K, y);
-
-    return {
-      n,
-      samples,
-      K,
-      alpha,
-      predict(vMean, hPair, occ) {
-        if (!vMean) return { score: null, cert: 0 };
-        const kStar = samples.map(s => aestheticKernel(vMean, hPair, occ, s.vMean, s.hPair, s.occ));
-        let delta = 0;
-        for (let i = 0; i < n; i++) delta += alpha[i] * kStar[i];
-        const predScore = Math.round(Math.max(12, Math.min(98, PRIOR_MEAN + delta)));
-
-        // GP / Ridge posterior certainty
-        const vVec = solveLinearSystem(K, kStar);
-        let explained = 0;
-        for (let i = 0; i < n; i++) explained += kStar[i] * vVec[i];
-        const cert = Math.max(0, Math.min(1, explained));
-        return { score: predScore, cert };
-      }
-    };
+    const L = choleskyDecompose(K);
+    const Lflat = new Float64Array(n * n);
+    for (let i = 0; i < n; i++) Lflat.set(L[i], i * n);
+    const alpha = choleskySolveFlat(Lflat, n, y);
+    return wrapAestheticRidgeModel(samples, alpha, Lflat);
   }
 
   function itemCompleteness(item) {
@@ -3096,12 +3195,236 @@
     };
   }
 
+  let cachedPrecomputedModels = null;
+  let cachedPrecomputedKey = '';
+
+  function computeModelsCacheKey() {
+    const rec = (state.settings && state.settings.recencyHalfLife) || 60;
+    const logSig = (state.outfitLogs || []).map(l =>
+      `${l.id}|${l.date}|${l.aesthetic}|${l.comfort}|${l.thermal}|${l.temp}|${l.occasion}|${(l.itemIds || []).join(',')}|${(l.culpritIds || []).join(',')}`
+    ).join(';');
+    const itemSig = (state.items || []).map(i => {
+      const e = Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512
+        ? `${Math.round(i.clipEmbedding[0] * 1e4)},${Math.round(i.clipEmbedding[255] * 1e4)},${Math.round(i.clipEmbedding[511] * 1e4)}`
+        : '0';
+      return `${i.id}|${i.status}|${i.category}|${i.warmth}|${i.formality}|${i.silhouette}|${i.rain}|${i.comfort}|${e}`;
+    }).join(';');
+    return `${rec}::${logSig}::${itemSig}`;
+  }
+
+  const RIDGE_WORKER_SRC = `
+    function cosSim(v1, v2) {
+      if (!v1 || !v2 || v1.length !== v2.length) return 0;
+      let dot = 0, m1 = 0, m2 = 0;
+      for (let i = 0; i < v1.length; i++) { dot += v1[i] * v2[i]; m1 += v1[i] * v1[i]; m2 += v2[i] * v2[i]; }
+      return (m1 === 0 || m2 === 0) ? 0 : dot / (Math.sqrt(m1) * Math.sqrt(m2));
+    }
+    function thermalK(cloA, vecA, cloB, vecB) {
+      const d = cloA - cloB;
+      const kClo = Math.exp(-(d * d) / (2 * 0.28 * 0.28));
+      if (vecA && vecB) return 0.65 * kClo + 0.35 * Math.max(0, cosSim(vecA, vecB));
+      return kClo;
+    }
+    function aesK(vA, hA, occA, vB, hB, occB) {
+      const kPair = (hA && hB) ? Math.max(0, cosSim(hA, hB)) : 0;
+      const kMean = (vA && vB) ? Math.max(0, cosSim(vA, vB)) : 0;
+      const baseSim = (hA && hB) ? (0.60 * kPair + 0.40 * kMean) : kMean;
+      const occF = (!occA || !occB || occA === occB) ? 1.0 : 0.65;
+      return baseSim * occF;
+    }
+    function cholDecompFlat(Kflat, n) {
+      const L = new Float64Array(n * n);
+      for (let i = 0; i < n; i++) {
+        const rI = i * n;
+        for (let j = 0; j <= i; j++) {
+          const rJ = j * n;
+          let sum = Kflat[rI + j];
+          for (let k = 0; k < j; k++) sum -= L[rI + k] * L[rJ + k];
+          if (i === j) L[rI + j] = Math.sqrt(Math.max(1e-12, sum));
+          else L[rI + j] = L[rJ + j] > 1e-12 ? (sum / L[rJ + j]) : 0;
+        }
+      }
+      return L;
+    }
+    function cholSolveFlat(L, n, y) {
+      const z = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        const r = i * n;
+        let s = y[i];
+        for (let j = 0; j < i; j++) s -= L[r + j] * z[j];
+        z[i] = L[r + i] > 1e-12 ? (s / L[r + i]) : 0;
+      }
+      const x = new Float64Array(n);
+      for (let i = n - 1; i >= 0; i--) {
+        let s = z[i];
+        for (let j = i + 1; j < n; j++) s -= L[j * n + i] * x[j];
+        x[i] = L[i * n + i] > 1e-12 ? (s / L[i * n + i]) : 0;
+      }
+      return x;
+    }
+    self.onmessage = function(e) {
+      const { jobId, thermalSamples, aesSamples } = e.data;
+      const tn = thermalSamples.length;
+      let tL = new Float64Array(0), tAlpha = new Float64Array(0);
+      if (tn > 0) {
+        const K = new Float64Array(tn * tn);
+        const y = new Float64Array(tn);
+        for (let i = 0; i < tn; i++) {
+          y[i] = thermalSamples[i].deltaT;
+          for (let j = i; j < tn; j++) {
+            const v = thermalK(thermalSamples[i].I_cl, thermalSamples[i].vec512, thermalSamples[j].I_cl, thermalSamples[j].vec512);
+            K[i * tn + j] = v;
+            K[j * tn + i] = v;
+          }
+          K[i * tn + i] += 0.45;
+        }
+        tL = cholDecompFlat(K, tn);
+        tAlpha = cholSolveFlat(tL, tn, y);
+      }
+
+      const an = aesSamples.length;
+      let aL = new Float64Array(0), aAlpha = new Float64Array(0);
+      if (an > 0) {
+        const K = new Float64Array(an * an);
+        const y = new Float64Array(an);
+        for (let i = 0; i < an; i++) {
+          y[i] = aesSamples[i].residual;
+          for (let j = i; j < an; j++) {
+            const v = aesK(aesSamples[i].vMean, aesSamples[i].hPair, aesSamples[i].occ, aesSamples[j].vMean, aesSamples[j].hPair, aesSamples[j].occ);
+            K[i * an + j] = v;
+            K[j * an + i] = v;
+          }
+          K[i * an + i] += 0.40 / Math.max(0.15, aesSamples[i].recencyW);
+        }
+        aL = cholDecompFlat(K, an);
+        aAlpha = cholSolveFlat(aL, an, y);
+      }
+
+      self.postMessage(
+        { jobId, tL, tAlpha, aL, aAlpha },
+        [tL.buffer, tAlpha.buffer, aL.buffer, aAlpha.buffer]
+      );
+    };
+  `;
+
+  let ridgeWorkerUrl = null;
+  let activeRidgeWorker = null;
+  let ridgeJobId = 0;
+  let ridgeWorkerPendingKey = '';
+  let ridgeWorkerUnsupported = false;
+  let ridgePillTimer = null;
+
+  function setModelUpdatingIndicator(active) {
+    const pill = document.getElementById('modelUpdatingPill');
+    if (ridgePillTimer) { clearTimeout(ridgePillTimer); ridgePillTimer = null; }
+    if (!pill) return;
+    if (active) {
+      // Only show pill if background solve takes > 100ms so instant solves never flicker
+      ridgePillTimer = setTimeout(() => { pill.classList.remove('hidden'); }, 100);
+    } else {
+      pill.classList.add('hidden');
+    }
+  }
+
+  function refreshActiveViewAfterModelUpdate() {
+    if (currentTab === 'closet') renderClosetView();
+    else if (currentTab === 'pairing') renderMatcherView();
+    else if (currentTab === 'suggestions') renderGeneratedOutfits();
+    else if (currentTab === 'gaps') renderGapView();
+    else if (currentTab === 'retire') renderRetireView();
+    else if (currentTab === 'sizing') renderSizingView();
+    else if (currentTab === 'models') renderModelsView();
+  }
+
+  function scheduleBackgroundModelRefit(targetKey) {
+    if (ridgeWorkerUnsupported || typeof Worker === 'undefined') return false;
+    if (activeRidgeWorker && ridgeWorkerPendingKey === targetKey) return true;
+
+    // Cancel any in-flight stale optimization immediately when a new log/edit arrives
+    if (activeRidgeWorker) {
+      try { activeRidgeWorker.terminate(); } catch (_) {}
+      activeRidgeWorker = null;
+    }
+
+    const jobId = ++ridgeJobId;
+    ridgeWorkerPendingKey = targetKey;
+    const pref512Snap = buildClipPreferenceSpace();
+    const thermalSamples = collectThermalSamples();
+    const aesSamples = collectAestheticSamples();
+
+    try {
+      if (!ridgeWorkerUrl) {
+        ridgeWorkerUrl = URL.createObjectURL(new Blob([RIDGE_WORKER_SRC], { type: 'application/javascript' }));
+      }
+      const worker = new Worker(ridgeWorkerUrl);
+      activeRidgeWorker = worker;
+      setModelUpdatingIndicator(true);
+
+      worker.onmessage = ev => {
+        if (ev.data.jobId !== ridgeJobId) return;
+        const { tL, tAlpha, aL, aAlpha } = ev.data;
+        cachedPrecomputedModels = {
+          pref512: pref512Snap,
+          ridgeModel: wrapThermalRidgeModel(thermalSamples, tAlpha, tL),
+          aesRidgeModel: wrapAestheticRidgeModel(aesSamples, aAlpha, aL)
+        };
+        cachedPrecomputedKey = targetKey;
+        ridgeWorkerPendingKey = '';
+        try { worker.terminate(); } catch (_) {}
+        if (activeRidgeWorker === worker) activeRidgeWorker = null;
+        setModelUpdatingIndicator(false);
+        refreshActiveViewAfterModelUpdate();
+      };
+
+      worker.onerror = () => {
+        try { worker.terminate(); } catch (_) {}
+        if (activeRidgeWorker === worker) activeRidgeWorker = null;
+        ridgeWorkerPendingKey = '';
+        ridgeWorkerUnsupported = true;
+        setModelUpdatingIndicator(false);
+        // Fallback to synchronous exact Cholesky if Blob worker is blocked
+        cachedPrecomputedModels = {
+          pref512: buildClipPreferenceSpace(),
+          ridgeModel: buildDualRidgeThermalModel(),
+          aesRidgeModel: buildDualRidgeAestheticModel()
+        };
+        cachedPrecomputedKey = targetKey;
+        refreshActiveViewAfterModelUpdate();
+      };
+
+      worker.postMessage({ jobId, thermalSamples, aesSamples });
+      return true;
+    } catch (err) {
+      ridgeWorkerUnsupported = true;
+      ridgeWorkerPendingKey = '';
+      setModelUpdatingIndicator(false);
+      return false;
+    }
+  }
+
   function makePrecomputedModels() {
-    return {
+    const key = computeModelsCacheKey();
+    if (cachedPrecomputedModels && cachedPrecomputedKey === key) return cachedPrecomputedModels;
+
+    // If we already have a cached model (or large log count), keep UI non-blocking and refit in background Worker
+    if ((cachedPrecomputedModels || state.outfitLogs.length > 20) && scheduleBackgroundModelRefit(key)) {
+      if (cachedPrecomputedModels) return cachedPrecomputedModels;
+      // First boot with many logs: return neutral prior immediately while Worker computes
+      return {
+        pref512: buildClipPreferenceSpace(),
+        ridgeModel: wrapThermalRidgeModel([], [], new Float64Array(0)),
+        aesRidgeModel: wrapAestheticRidgeModel([], [], new Float64Array(0))
+      };
+    }
+
+    // Small initial boot (<= 20 logs) or Worker unsupported: fast synchronous exact Cholesky
+    cachedPrecomputedModels = {
       pref512: buildClipPreferenceSpace(),
       ridgeModel: buildDualRidgeThermalModel(),
       aesRidgeModel: buildDualRidgeAestheticModel()
     };
+    cachedPrecomputedKey = key;
+    return cachedPrecomputedModels;
   }
 
   function evaluateSingleItem(item, precomputed) {
@@ -4501,7 +4824,7 @@
     //    - On the 1-4D taste subspace: SOFT partial Gram-Schmidt (25% repulsion between gaps, 15% from owned mean)
     //      so gaps stay generally aligned with your taste while fanning out slightly non-parallel for exploration!
     //    - On the ~508 taste-neutral dimensions: STRICT 100% Gram-Schmidt perpendicular to owned & mutual gaps.
-    const ridge = buildDualRidgeAestheticModel();
+    const ridge = pre.aesRidgeModel;
     const certBeta = gapCertMode === 'safe' ? -0.60 : gapCertMode === 'explore' ? 0.70 : 0.0;
     const GAMMA_OPT = 3.0;
 
@@ -4533,7 +4856,7 @@
 
           // 2) Posterior certainty / uncertainty gradient: c(v) = k^T (K+lambda I)^-1 k
           if (certBeta !== 0) {
-            const uVec = solveLinearSystem(ridge.K, kVec);
+            const uVec = ridge.solveK(kVec);
             let explained = 0;
             for (let i = 0; i < ridge.n; i++) explained += kVec[i] * uVec[i];
             const sigma = Math.sqrt(Math.max(0.05, 1 - Math.max(0, Math.min(0.999, explained))));
@@ -4656,9 +4979,7 @@
         const kVec = rawSims[idx].map(sim => Math.exp(-2.8 * Math.max(0, (maxSim - sim) / 0.12)));
         let delta = 0;
         for (let i = 0; i < ridge.n; i++) delta += ridge.alpha[i] * kVec[i];
-        const uVec = solveLinearSystem(ridge.K, kVec);
-        let explained = 0;
-        for (let i = 0; i < ridge.n; i++) explained += kVec[i] * uVec[i];
+        const explained = ridge.quadForm(kVec);
         rawMu.push(delta);
         rawSigma.push(Math.sqrt(Math.max(0.02, 1 - Math.max(0, Math.min(0.999, explained)))));
       }
