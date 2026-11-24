@@ -181,6 +181,7 @@
           <option value="outerwear">Outerwear</option>
           <option value="top">Tops</option>
           <option value="bottom">Bottoms</option>
+          <option value="fullbody">Full Body</option>
           <option value="shoes">Shoes</option>
           <option value="accessory">Accessories</option>
         </select>
@@ -300,6 +301,7 @@
               <option value="outerwear">Outerwear</option>
               <option value="top">Top</option>
               <option value="bottom">Bottom</option>
+              <option value="fullbody">Full Body (Dress / Jumpsuit)</option>
               <option value="shoes">Shoes</option>
               <option value="accessory">Accessory</option>
             </select>
@@ -372,6 +374,7 @@
               <button type="button" data-bcat="outerwear" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Outerwear</button>
               <button type="button" data-bcat="top" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Tops</button>
               <button type="button" data-bcat="bottom" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Bottoms</button>
+              <button type="button" data-bcat="fullbody" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Full Body</button>
               <button type="button" data-bcat="shoes" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Shoes</button>
               <button type="button" data-bcat="accessory" class="bcat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Accessories</button>
             </div>
@@ -440,6 +443,7 @@
             <option value="outerwear">Outerwear</option>
             <option value="top">Top</option>
             <option value="bottom">Bottom</option>
+            <option value="fullbody">Full Body (Dress / Jumpsuit)</option>
             <option value="shoes">Shoes</option>
             <option value="accessory">Accessory</option>
           </select>
@@ -469,6 +473,7 @@
             <button type="button" data-scat="outerwear" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Outerwear</button>
             <button type="button" data-scat="top" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Tops</button>
             <button type="button" data-scat="bottom" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Bottoms</button>
+            <button type="button" data-scat="fullbody" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Full Body</button>
             <button type="button" data-scat="shoes" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Shoes</button>
             <button type="button" data-scat="accessory" class="scat-btn px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">Accessories</button>
           </div>
@@ -496,9 +501,14 @@
 
   <!-- VIEW 3: STRATEGIC GAP ANALYSIS -->
   <section id="view-gaps" class="view-section hidden space-y-5">
-    <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <h2 class="text-base font-bold text-slate-900">Strategic Closet Gap Analysis</h2>
-      <p class="text-xs text-slate-600 mt-1 max-w-3xl">Simulates adding each candidate piece into your embedding space and counts how many new high-scoring outfits it unlocks across temperatures (44°F rain, 58°F mild, 78°F warm) and occasions.</p>
+    <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 class="text-base font-bold text-slate-900">Strategic Closet Gap Analysis</h2>
+        <p class="text-xs text-slate-600 mt-1 max-w-2xl">Scans your whole closet pairwise (season-filtered across all 5 categories, discounting redundant duplicates). Click <strong>Synthesize 25 Orthogonal Gaps</strong> to optimize 25 mutually perpendicular 512-D CLIP vectors and decode them into tailored garment recipes.</p>
+      </div>
+      <button type="button" id="btnSynthesizeGaps" class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition shrink-0">
+        Synthesize 25 Orthogonal Gaps (512-D)
+      </button>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -507,7 +517,30 @@
         <div id="wishlistGapList" class="space-y-3"></div>
       </div>
       <div class="space-y-3">
-        <h3 class="text-sm font-bold text-slate-900">Detected Archetype Gaps (Not Yet in Closet)</h3>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="gapRightHeading" class="text-sm font-bold text-slate-900">512-D Orthogonal Gap Synthesis</h3>
+          <span id="gapOrthoBadge" class="hidden px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-semibold"></span>
+        </div>
+        <div id="gapCatFilterBar" class="hidden flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" data-gcat="all" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 text-white">All (25)</button>
+            <button type="button" data-gcat="outerwear" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Outerwear</button>
+            <button type="button" data-gcat="top" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Tops</button>
+            <button type="button" data-gcat="bottom" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Bottoms</button>
+            <button type="button" data-gcat="fullbody" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Full Body</button>
+            <button type="button" data-gcat="shoes" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Shoes</button>
+            <button type="button" data-gcat="accessory" class="gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Accessories</button>
+          </div>
+          <select id="gapSortSelect" class="px-2.5 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700">
+            <option value="overall">Sort: Best Overall (Value − Redundancy)</option>
+            <option value="style">Sort: Highest Style Score</option>
+            <option value="matches">Sort: Most Closet Matches</option>
+            <option value="novel">Sort: Least Redundant (Most Novel)</option>
+            <option value="coverage">Sort: Thin Season / Rain Gaps First</option>
+            <option value="certainty">Sort: Highest Certainty</option>
+          </select>
+        </div>
+        <div id="gapSynthStatus" class="hidden p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-900 font-medium"></div>
         <div id="archetypeGapList" class="space-y-3"></div>
       </div>
     </div>
@@ -653,6 +686,7 @@
               <option value="top">Tops / Sweaters / Shirts</option>
               <option value="outerwear">Outerwear / Coats</option>
               <option value="bottom">Bottoms / Trousers</option>
+              <option value="fullbody">Full Body (Dress / Jumpsuit)</option>
               <option value="shoes">Shoes / Boots</option>
               <option value="accessory">Accessories (Belts / Hats / Gloves)</option>
             </select>
@@ -950,6 +984,7 @@
             <option value="outerwear">Outerwear</option>
             <option value="top">Top</option>
             <option value="bottom">Bottom</option>
+            <option value="fullbody">Full Body (Dress / Jumpsuit)</option>
             <option value="shoes">Shoes</option>
             <option value="accessory">Accessory</option>
           </select>
@@ -1152,17 +1187,20 @@
         <div id="rWeatherStatus" class="text-[10px] text-blue-900 hidden"></div>
       </div>
       <div>
-        <label for="rAesthetic" class="block text-xs font-semibold text-slate-700 mb-1">Aesthetics / Style (1–5)</label>
+        <label for="rAesthetic" class="block text-xs font-semibold text-slate-700">Aesthetics / Style (1–5)</label>
+        <p class="text-[10px] text-slate-500 mb-1">How much you liked this look <strong>for the selected occasion</strong>.</p>
         <input type="range" id="rAesthetic" min="1" max="5" value="4" class="w-full accent-blue-700">
         <div class="flex justify-between text-[11px] text-slate-500"><span>1 · Clashed</span><span id="rAestheticVal" class="font-bold text-blue-700">4 / 5</span><span>5 · Loved it</span></div>
       </div>
       <div>
-        <label for="rComfort" class="block text-xs font-semibold text-slate-700 mb-1">Physical Comfort (1–5)</label>
+        <label for="rComfort" class="block text-xs font-semibold text-slate-700">Physical Comfort (1–5)</label>
+        <p class="text-[10px] text-slate-500 mb-1">Purely how the clothes felt on your body—independent of occasion or weather.</p>
         <input type="range" id="rComfort" min="1" max="5" value="4" class="w-full accent-blue-700">
         <div class="flex justify-between text-[11px] text-slate-500"><span>1 · Uncomfortable</span><span id="rComfortVal" class="font-bold text-blue-700">4 / 5</span><span>5 · Effortless</span></div>
       </div>
       <div>
-        <label for="rThermal" class="block text-xs font-semibold text-slate-700 mb-1">Temperature Feeling</label>
+        <label for="rThermal" class="block text-xs font-semibold text-slate-700">Temperature Feeling</label>
+        <p class="text-[10px] text-slate-500 mb-1">Whether you felt cold, right, or warm at the logged temp—independent of occasion.</p>
         <select id="rThermal" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white">
           <option value="unknown">Unknown (Try-on)</option>
           <option value="cold">Too Cold (Needed more warmth)</option>
@@ -1215,6 +1253,7 @@
       { value: 'outerwear', text: 'a photo of an outerwear coat, jacket, blazer, trench coat, or parka' },
       { value: 'top', text: 'a photo of a shirt, t-shirt, sweater, knitwear, hoodie, or blouse top' },
       { value: 'bottom', text: 'a photo of pants, jeans, trousers, shorts, or a skirt' },
+      { value: 'fullbody', text: 'a photo of a full-body dress, jumpsuit, romper, overalls, or one-piece outfit' },
       { value: 'shoes', text: 'a photo of footwear, shoes, boots, sneakers, or loafers' },
       { value: 'accessory', text: 'a photo of a fashion accessory, bag, belt, hat, scarf, or watch' }
     ],
@@ -1271,6 +1310,8 @@
     { clo: 0.04, text: 'sneakers, leather loafers, flats, or low-top dress shoes' },
     { clo: 0.10, text: 'leather Chelsea boots, combat boots, or insulated winter boots' },
     { clo: 0.10, text: 'wool scarf, knit cashmere scarf, winter beanie hat, or warm gloves' },
+    { clo: 0.28, text: 'lightweight summer sundress, slip dress, or linen romper' },
+    { clo: 0.48, text: 'knit sweater dress, wool midi dress, or tailored jumpsuit' },
     { clo: 0.00, text: 'leather belt, handbag, tote bag, sunglasses, watch, or jewelry accessory' }
   ];
 
@@ -1985,7 +2026,7 @@
     return dot / (Math.sqrt(m1) * Math.sqrt(m2));
   }
 
-  const CATEGORY_SALIENCE = { outerwear: 1.0, top: 1.0, bottom: 1.0, shoes: 0.85, accessory: 0.35 };
+  const CATEGORY_SALIENCE = { outerwear: 1.0, top: 1.0, bottom: 1.0, fullbody: 1.0, shoes: 0.85, accessory: 0.35 };
   function itemSalience(item) {
     return CATEGORY_SALIENCE[effAttr(item, 'category', item.category)] || 0.7;
   }
@@ -2191,6 +2232,7 @@
     outerwear: [0.22, 0.30, 0.40, 0.55, 0.72],
     top:       [0.09, 0.18, 0.28, 0.38, 0.46],
     bottom:    [0.08, 0.15, 0.24, 0.30, 0.36],
+    fullbody:  [0.20, 0.32, 0.48, 0.62, 0.78],
     shoes:     [0.03, 0.04, 0.06, 0.10, 0.14],
     accessory: [0.00, 0.00, 0.06, 0.10, 0.14]
   };
@@ -2721,7 +2763,7 @@
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.items)) {
       throw new Error('Backup must contain an items array.');
     }
-    const validCats = new Set(['outerwear', 'top', 'bottom', 'shoes', 'accessory']);
+    const validCats = new Set(['outerwear', 'top', 'bottom', 'fullbody', 'shoes', 'accessory']);
     const validStatuses = new Set(['owned', 'wishlist', 'donated', 'tryon']);
     const cleanItems = parsed.items.map((raw, idx) => {
       if (!raw || typeof raw !== 'object') throw new Error(`Invalid item at index ${idx}`);
@@ -2838,82 +2880,165 @@
     `;
   }
 
-  function evaluateSingleItem(item) {
-    const owned = state.items.filter(x => x.status === 'owned' && x.id !== item.id);
-    const tops = owned.filter(x => x.category === 'top');
-    const bottoms = owned.filter(x => x.category === 'bottom');
-    const shoes = owned.filter(x => x.category === 'shoes');
+  function itemsShareSeason(a, b) {
+    const sA = getItemSeasons(a).list;
+    const sB = getItemSeasons(b).list;
+    const hasOverlap = sA.some(s => sB.includes(s));
+    if (!hasOverlap) return false;
+    const wA = Number(effAttr(a, 'warmth', 3));
+    const wB = Number(effAttr(b, 'warmth', 3));
+    const maxGap = (a.category === 'accessory' || b.category === 'accessory' || a.category === 'shoes' || b.category === 'shoes') ? 3 : 2;
+    return Math.abs(wA - wB) <= maxGap;
+  }
 
-    let bestScores = [];
-    const temps = [42, 58, 76];
-    const effRain = Number(effAttr(item, 'rain', 0));
-    const effForm = Number(effAttr(item, 'formality', 3));
-    temps.forEach(t => {
-      const sample = [item];
-      if (item.category !== 'top' && tops[0]) sample.push(tops[0]);
-      if (item.category !== 'bottom' && bottoms[0]) sample.push(bottoms[0]);
-      if (item.category !== 'shoes' && shoes[0]) sample.push(shoes[0]);
-      if (sample.length >= 2) {
-        bestScores.push(evaluateOutfit(sample, { temp: t, weather: effRain ? 'rain' : 'clear', occasion: effForm >= 4 ? 'work' : 'casual' }));
+  function computeItemRedundancy(item, pool) {
+    let bestTwin = null;
+    let bestSim = 0;
+    let usedClip = false;
+    const wA = Number(effAttr(item, 'warmth', 3));
+    const fA = Number(effAttr(item, 'formality', 3));
+    const silA = effAttr(item, 'silhouette', 'structured');
+    const rgbA = hexToRgb(item.colorHex || '#333333');
+    const hasClipA = Array.isArray(item.clipEmbedding) && item.clipEmbedding.length === 512;
+
+    pool.forEach(other => {
+      if (!other || other.id === item.id || other.category !== item.category) return;
+      if (!itemsShareSeason(item, other)) return;
+      const wB = Number(effAttr(other, 'warmth', 3));
+      const fB = Number(effAttr(other, 'formality', 3));
+      if (Math.abs(wA - wB) > 1 || Math.abs(fA - fB) > 1) return;
+
+      let sim = 0;
+      let clipPair = false;
+      const hasClipB = Array.isArray(other.clipEmbedding) && other.clipEmbedding.length === 512;
+      if (hasClipA && hasClipB) {
+        sim = Math.max(0, cosineSimilarity(item.clipEmbedding, other.clipEmbedding));
+        clipPair = true;
+      } else {
+        const rgbB = hexToRgb(other.colorHex || '#333333');
+        const cDist = Math.sqrt((rgbA.r - rgbB.r) ** 2 + (rgbA.g - rgbB.g) ** 2 + (rgbA.b - rgbB.b) ** 2) / 441.67;
+        const silB = effAttr(other, 'silhouette', 'structured');
+        const silMatch = silA === silB ? 1 : 0.65;
+        const rainMatch = Number(effAttr(item, 'rain', 0)) === Number(effAttr(other, 'rain', 0)) ? 1 : 0.7;
+        sim = (1 - cDist) * 0.55 + silMatch * 0.25 + rainMatch * 0.20;
+      }
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestTwin = other;
+        usedClip = clipPair;
       }
     });
 
-    const best = bestScores.sort((a, b) => b.score - a.score)[0] || { score: 65, certainty: 40 };
-    const comp = Math.round(itemCompleteness(item) * 100);
-    const freq = getItemWearFreq(item);
-    const wornBoost = freq === 'staple' ? 24 : freq === 'regular' ? 20 : (freq === 'rare' || freq === 'never') ? 16 : 0;
-    const cert = Math.min(96, Math.max(16, Math.round(comp * 0.58 + wornBoost + (item.status === 'wishlist' ? 0 : 10))));
-    return { score: best.score, certainty: cert, completeness: comp };
+    const simPct = Math.round(bestSim * 100);
+    const threshold = usedClip ? 85 : 88;
+    return { twin: bestTwin, simPct, isRedundant: Boolean(bestTwin && simPct >= threshold), usedClip };
   }
 
-  function simulateUnlockCount(candidate) {
-    const owned = state.items.filter(x => x.status === 'owned');
-    const tops = owned.filter(x => x.category === 'top').slice(0, 4);
-    const bottoms = owned.filter(x => x.category === 'bottom').slice(0, 4);
-    const shoes = owned.filter(x => x.category === 'shoes').slice(0, 3);
-    const scenarios = [
-      { temp: 44, weather: 'rain', occasion: 'work' },
-      { temp: 58, weather: 'clear', occasion: 'casual' },
-      { temp: 78, weather: 'clear', occasion: 'dinner' }
-    ];
-    const precomputed = {
+  function makePrecomputedModels() {
+    return {
       pref512: buildClipPreferenceSpace(),
       ridgeModel: buildDualRidgeThermalModel(),
       aesRidgeModel: buildDualRidgeAestheticModel()
     };
-    // Build only unique candidate outfits (never loop over the replaced category, and deduplicate by item IDs!)
-    const tPool = candidate.category === 'top' ? [candidate] : (tops.length ? tops : [null]);
-    const bPool = candidate.category === 'bottom' ? [candidate] : (bottoms.length ? bottoms : [null]);
-    const sPool = candidate.category === 'shoes' ? [candidate] : (shoes.length ? shoes : [null]);
+  }
 
-    const uniqueCombos = [];
-    const seenKeys = new Set();
-    tPool.forEach(t => {
-      bPool.forEach(b => {
-        sPool.forEach(sh => {
-          const combo = (candidate.category === 'outerwear' || candidate.category === 'accessory')
-            ? [candidate, t, b, sh].filter(Boolean)
-            : [t, b, sh].filter(Boolean);
-          if (combo.length < 2) return;
-          const key = combo.map(x => x.id).sort().join('|');
-          if (seenKeys.has(key)) return;
-          seenKeys.add(key);
-          uniqueCombos.push(combo);
-        });
-      });
+  function evaluateSingleItem(item, precomputed) {
+    const owned = state.items.filter(x => x.status === 'owned' && x.id !== item.id);
+    const pre = precomputed || makePrecomputedModels();
+    const effForm = Number(effAttr(item, 'formality', 3));
+    const occ = effForm >= 4 ? 'work' : 'casual';
+    const ctx = { temp: 58, weather: 'clear', occasion: occ };
+
+    // Whole-closet season-filtered pairwise style scan across ALL other categories (incl. outerwear & accessories)
+    const pairScores = [];
+    let strongPairs = 0;
+    owned.forEach(partner => {
+      if (partner.category === item.category) return;
+      if ((item.category === 'fullbody' && partner.category === 'bottom') || (item.category === 'bottom' && partner.category === 'fullbody')) return;
+      if (!itemsShareSeason(item, partner)) return;
+      const ev = evaluateOutfit([item, partner], ctx, pre);
+      const st = ev.styleScore ?? ev.score;
+      pairScores.push(st);
+      if (st >= 72) strongPairs++;
     });
 
-    let unlocked = 0, topScore = 0, topCertainty = 0;
-    uniqueCombos.forEach(combo => {
-      let bestForCombo = 0;
-      scenarios.forEach(ctx => {
-        const res = evaluateOutfit(combo, ctx, precomputed);
-        if (res.score > bestForCombo) bestForCombo = res.score;
-        if (res.score > topScore) { topScore = res.score; topCertainty = res.certainty; }
-      });
-      if (bestForCombo >= 76) unlocked++;
+    pairScores.sort((a, b) => b - a);
+    const topSlice = pairScores.slice(0, Math.min(3, pairScores.length));
+    const topStyle = topSlice.length
+      ? Math.round(topSlice.reduce((a, b) => a + b, 0) / topSlice.length)
+      : 65;
+
+    const redundancy = computeItemRedundancy(item, owned);
+    const comp = Math.round(itemCompleteness(item) * 100);
+    const freq = getItemWearFreq(item);
+    const wornBoost = freq === 'staple' ? 24 : freq === 'regular' ? 20 : (freq === 'rare' || freq === 'never') ? 16 : 0;
+    const cert = Math.min(96, Math.max(16, Math.round(comp * 0.58 + wornBoost + (item.status === 'wishlist' ? 0 : 10))));
+    return { score: topStyle, certainty: cert, completeness: comp, strongPairs, totalChecked: pairScores.length, redundancy };
+  }
+
+  function simulateUnlockCount(candidate, precomputed) {
+    const owned = state.items.filter(x => x.status === 'owned');
+    const pre = precomputed || makePrecomputedModels();
+    const effForm = Number(effAttr(candidate, 'formality', 3));
+    const occ = effForm >= 4 ? 'work' : 'casual';
+    const ctx = { temp: 58, weather: 'clear', occasion: occ };
+
+    // Whole-closet season-filtered pairwise style scan across ALL other categories (outerwear, tops, bottoms, shoes, accessories)
+    let strongPairs = 0;
+    let topScore = 0;
+    let topCertainty = 0;
+    const catCounts = {};
+    const matchedPartners = [];
+
+    owned.forEach(partner => {
+      if (partner.category === candidate.category) return;
+      if ((candidate.category === 'fullbody' && partner.category === 'bottom') || (candidate.category === 'bottom' && partner.category === 'fullbody')) return;
+      if (!itemsShareSeason(candidate, partner)) return;
+      const ev = evaluateOutfit([candidate, partner], ctx, pre);
+      const st = ev.styleScore ?? ev.score;
+      if (st > topScore) { topScore = st; topCertainty = ev.certainty; }
+      if (st >= 74) {
+        strongPairs++;
+        catCounts[partner.category] = (catCounts[partner.category] || 0) + 1;
+        matchedPartners.push({ item: partner, styleScore: st, certainty: ev.certainty });
+      }
     });
-    return { unlocked, topScore: topScore || 72, topCertainty: topCertainty || 48 };
+    matchedPartners.sort((a, b) => b.styleScore - a.styleScore);
+
+    // Redundancy check against owned items in the SAME category & season
+    const redundancy = computeItemRedundancy(candidate, owned);
+
+    // Season / rain coverage gap check
+    const candSeasons = getItemSeasons(candidate).list;
+    const candRain = Number(effAttr(candidate, 'rain', 0)) === 1;
+    const sameSlotOwned = owned.filter(o =>
+      o.category === candidate.category &&
+      itemsShareSeason(candidate, o) &&
+      (!candRain || Number(effAttr(o, 'rain', 0)) === 1)
+    ).length;
+
+    let gapTag = '';
+    if (candRain && sameSlotOwned === 0) {
+      gapTag = `Fills rainproof ${candidate.category} gap`;
+    } else if (sameSlotOwned <= 1) {
+      const sLabel = candSeasons.slice(0, 2).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('/');
+      gapTag = `Thin ${sLabel} ${candidate.category} coverage (${sameSlotOwned} owned)`;
+    }
+
+    // Discount net rank value when candidate is heavily redundant with an already-owned twin
+    const effectiveRank = redundancy.isRedundant ? Math.round(strongPairs * 0.35) : strongPairs + (gapTag ? 3 : 0);
+    const catSummary = Object.entries(catCounts).map(([c, n]) => `${n} ${c}`).join(' · ');
+
+    return {
+      unlocked: strongPairs,
+      effectiveRank,
+      topScore: topScore || 70,
+      topCertainty: topCertainty || 48,
+      catSummary,
+      matchedPartners,
+      redundancy,
+      gapTag
+    };
   }
 
   // ---------- RENDER ALL VIEWS ----------
@@ -2957,7 +3082,8 @@
     const owned = state.items.filter(i => i.status === 'owned');
     const wish = state.items.filter(i => i.status === 'wishlist');
     const clipCount = state.items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512).length;
-    const evals = owned.map(evaluateSingleItem);
+    const pre = makePrecomputedModels();
+    const evals = owned.map(it => evaluateSingleItem(it, pre));
     const avgCert = evals.length ? Math.round(evals.reduce((a, e) => a + e.certainty, 0) / evals.length) : 0;
     const curSeason = getCurrentAuditSeason();
     const retireCount = owned.filter((it, idx) => {
@@ -3007,8 +3133,9 @@
       return;
     }
 
+    const closetPre = makePrecomputedModels();
     grid.innerHTML = filtered.map(it => {
-      const ev = evaluateSingleItem(it);
+      const ev = evaluateSingleItem(it, closetPre);
       const unlock = it.status === 'wishlist' ? simulateUnlockCount(it) : null;
       const cpw = it.price ? `$${it.price}` : '—';
       const freq = getItemWearFreq(it);
@@ -3253,6 +3380,7 @@
       top: [44, 12, 0.95, 2],
       bottom: [40, 48, 1.0, 1],
       shoes: [70, 64, 0.78, 2],
+      fullbody: [42, 14, 1.08, 2],
       accessory: [74, 16, 0.65, 4]
     };
     items.forEach(it => {
@@ -3536,6 +3664,7 @@
     const outerList = pool.filter(i => i.category === 'outerwear' && !seedIdsSet.has(i.id));
     const topList = pool.filter(i => i.category === 'top' && !seedIdsSet.has(i.id));
     const bottomList = pool.filter(i => i.category === 'bottom' && !seedIdsSet.has(i.id));
+    const fullBodyList = pool.filter(i => i.category === 'fullbody' && !seedIdsSet.has(i.id));
     const shoeList = pool.filter(i => i.category === 'shoes' && !seedIdsSet.has(i.id));
     const accList = pool.filter(i => i.category === 'accessory' && !seedIdsSet.has(i.id));
 
@@ -3543,12 +3672,13 @@
     const seedOuters = seedByCat('outerwear');
     const seedTops = seedByCat('top');
     const seedBottoms = seedByCat('bottom');
+    const seedFullBodies = seedByCat('fullbody');
     const seedShoes = seedByCat('shoes');
     const seedAccs = seedByCat('accessory');
 
     const outers = seedOuters.length ? [null] : (outerList.length ? [null, ...outerList] : [null]);
     let topCombos;
-    if (seedTops.length >= 2) {
+    if (seedFullBodies.length || seedTops.length >= 2) {
       topCombos = [[]];
     } else if (seedTops.length === 1) {
       topCombos = [[]];
@@ -3567,12 +3697,12 @@
         }
       }
     }
-    const bottoms = seedBottoms.length ? [null] : (bottomList.length ? bottomList : [null]);
+    const bottoms = (seedFullBodies.length || seedBottoms.length) ? [null] : (bottomList.length ? bottomList : [null]);
     const shoes = seedShoes.length ? [null] : (shoeList.length ? shoeList : [null]);
 
     const missingCats = [];
-    if (!topList.length && !seedTops.length) missingCats.push('top');
-    if (!bottomList.length && !seedBottoms.length) missingCats.push('bottom');
+    if (!topList.length && !seedTops.length && !fullBodyList.length && !seedFullBodies.length) missingCats.push('top');
+    if (!bottomList.length && !seedBottoms.length && !fullBodyList.length && !seedFullBodies.length) missingCats.push('bottom');
     if (!shoeList.length && !seedShoes.length) missingCats.push('shoes');
 
     // Precompute Ridge & preference models ONCE for the entire generation pass (10x+ speedup)
@@ -3586,26 +3716,41 @@
     const outersCapped = capPool(outers, 7);
     const topCombosCapped = capPool(topCombos, 10);
     const bottomsCapped = capPool(bottoms, 7);
+    const fullBodyCapped = capPool(fullBodyList, 6);
     const shoesCapped = capPool(shoes, 6);
 
-    // Stage 1: Score Core Outfits (always including every anchor piece in seeds!)
+    // Stage 1: Score Core Outfits (both Top+Bottom combos and Full-Body combos!)
     const coreCandidates = [];
     const seenKeys = new Set();
+    const pushCandidate = items => {
+      if (items.length < 2) return;
+      const key = items.map(x => x.id).sort().join('|');
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      const ev = evaluateOutfit(items, ctx, precomputed);
+      coreCandidates.push({ items, ev });
+    };
+
     outersCapped.forEach(o => {
       topCombosCapped.forEach(tc => {
         bottomsCapped.forEach(b => {
           shoesCapped.forEach(s => {
-            const items = [...seeds, o, ...tc, b, s].filter(Boolean);
-            if (items.length < 2) return;
-            const key = items.map(x => x.id).sort().join('|');
-            if (seenKeys.has(key)) return;
-            seenKeys.add(key);
-            const ev = evaluateOutfit(items, ctx, precomputed);
-            coreCandidates.push({ items, ev });
+            pushCandidate([...seeds, o, ...tc, b, s].filter(Boolean));
           });
         });
       });
     });
+
+    // Full-body one-piece outfits (when no top/bottom/fullbody is already locked in seeds)
+    if (!seedFullBodies.length && !seedTops.length && !seedBottoms.length && fullBodyCapped.length) {
+      outersCapped.forEach(o => {
+        fullBodyCapped.forEach(fb => {
+          shoesCapped.forEach(s => {
+            pushCandidate([...seeds, o, fb, s].filter(Boolean));
+          });
+        });
+      });
+    }
 
     coreCandidates.sort((a, b) => b.ev.score - a.ev.score);
 
@@ -3752,54 +3897,391 @@
     }).join('');
   }
 
+  // ---------- 512-D ORTHOGONAL GAP VECTOR OPTIMIZER & GARMENT DECODER ----------
+  const CLIP_DECODE_TYPES = [
+    { label: 'Wool Overcoat', category: 'outerwear', text: 'tailored long wool overcoat outerwear coat', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Waterproof Trench Coat', category: 'outerwear', text: 'waterproof technical trench coat rain shell outerwear', defaultWarmth: 3, defaultRain: 1 },
+    { label: 'Chore Jacket / Overshirt', category: 'outerwear', text: 'utilitarian chore jacket overshirt workwear outerwear', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Unstructured Blazer', category: 'outerwear', text: 'unstructured tailored blazer sport coat jacket', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Cropped Bomber Jacket', category: 'outerwear', text: 'minimalist cropped bomber blouson jacket outerwear', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Insulated Down Parka', category: 'outerwear', text: 'heavy insulated winter down puffer parka coat', defaultWarmth: 5, defaultRain: 1 },
+    { label: 'Merino Crewneck Sweater', category: 'top', text: 'fine merino wool crewneck knit sweater pullover', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Button-Down Oxford Shirt', category: 'top', text: 'crisp button-down oxford collared dress shirt', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Linen Camp-Collar Shirt', category: 'top', text: 'breathable short-sleeve linen camp collar summer shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Heavyweight Boxy Tee', category: 'top', text: 'heavyweight cotton minimalist crewneck t-shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Chunky Knit Cardigan', category: 'top', text: 'textured chunky wool knit button cardigan sweater', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Structured Polo / Henley', category: 'top', text: 'refined knit polo shirt or long-sleeve henley top', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Pleated Tailored Trousers', category: 'bottom', text: 'relaxed pleated tailored wool dress trousers pants', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Straight Selvedge Denim', category: 'bottom', text: 'straight-leg raw selvedge denim jeans pants', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Tapered Twill Chinos', category: 'bottom', text: 'clean cotton twill chino trousers casual pants', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Wide-Leg Linen Pants', category: 'bottom', text: 'breezy wide-leg summer linen drawstring trousers', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Midi Slip / Knit Dress', category: 'fullbody', text: 'minimalist midi slip dress or ribbed knit sweater dress', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Tailored Jumpsuit / Boiler Suit', category: 'fullbody', text: 'structured one-piece tailored jumpsuit or utilitarian boiler suit', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Leather Penny Loafers', category: 'shoes', text: 'classic leather penny loafers dress shoes', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Weatherproof Chelsea Boots', category: 'shoes', text: 'waterproof leather chelsea boots ankle boots', defaultWarmth: 4, defaultRain: 1 },
+    { label: 'Minimalist Leather Sneakers', category: 'shoes', text: 'clean minimalist low-top leather sneakers shoes', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Suede Chukka / Derby Boots', category: 'shoes', text: 'soft suede chukka boots or casual derby shoes', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Structured Leather Tote', category: 'accessory', text: 'minimalist leather tote bag or crossbody messenger bag', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Woven Leather Belt', category: 'accessory', text: 'classic braided or smooth leather dress belt accessory', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Cashmere / Wool Scarf', category: 'accessory', text: 'soft brushed cashmere or wool winter scarf accessory', defaultWarmth: 5, defaultRain: 0 },
+  ];
+
+  const CLIP_DECODE_COLORS = [
+    { label: 'Charcoal', hex: '#333840', text: 'dark charcoal grey color' },
+    { label: 'Black', hex: '#18181B', text: 'deep matte black color' },
+    { label: 'Navy', hex: '#1E2D40', text: 'deep navy blue color' },
+    { label: 'Mid-Grey', hex: '#6B7280', text: 'heather mid-grey silver color' },
+    { label: 'Ivory', hex: '#ECE8DF', text: 'warm ivory cream off-white color' },
+    { label: 'Olive', hex: '#4F5D46', text: 'muted olive drab moss green color' },
+    { label: 'Camel', hex: '#B08968', text: 'warm camel tan beige color' },
+    { label: 'Espresso', hex: '#3B261D', text: 'rich espresso dark brown color' },
+    { label: 'Burgundy', hex: '#7B2C3B', text: 'deep burgundy oxblood wine red color' },
+    { label: 'Forest Green', hex: '#234236', text: 'deep forest pine green color' },
+    { label: 'Slate Blue', hex: '#4A637D', text: 'muted slate dusty blue color' },
+    { label: 'Sand', hex: '#D1C3AE', text: 'light stone khaki sand neutral color' }
+  ];
+
+  const CLIP_DECODE_FABRICS = [
+    { label: 'Brushed Wool', text: 'brushed heavy wool flannel fabric' },
+    { label: 'Extra-Fine Merino', text: 'smooth extra-fine merino wool knit fabric' },
+    { label: 'Heavy Cotton Twill', text: 'sturdy heavy cotton twill canvas fabric' },
+    { label: '100% Linen', text: 'airy woven breathable linen fabric' },
+    { label: 'Raw Selvedge Denim', text: 'structured raw indigo selvedge denim fabric' },
+    { label: 'Soft Suede', text: 'matte velvety brushed suede leather' },
+    { label: 'Full-Grain Leather', text: 'smooth structured full-grain calfskin leather' },
+    { label: 'Waterproof Tech Shell', text: 'matte 3-layer waterproof breathable technical shell fabric' },
+    { label: 'Fluid Silk / Tencel', text: 'soft draped fluid silk or tencel fabric' },
+    { label: 'Ribbed Corduroy', text: 'textured wide-wale ribbed corduroy fabric' }
+  ];
+
+  const CLIP_DECODE_SILHOUETTES = [
+    { value: 'fitted', label: 'Fitted', text: 'slim fitted tailored close cut silhouette' },
+    { value: 'structured', label: 'Structured', text: 'structured classic straight tailored silhouette' },
+    { value: 'relaxed', label: 'Relaxed', text: 'relaxed boxy oversized draped silhouette' }
+  ];
+
+  let synthesizedGaps = [];
+  let gapOrthoStats = null;
+  let gapCatFilter = 'all';
+  let gapSortMode = 'overall';
+
+  async function ensureDecodeBanksLoaded(eng, onProgress) {
+    if (eng.decodeBanks) return eng.decodeBanks;
+    if (onProgress) onProgress('Encoding 512-D garment decoding banks (types, colors, fabrics)...');
+    async function encodeBatch(items) {
+      const inputs = eng.tokenizer(items.map(x => x.text), { padding: true, truncation: true });
+      const { text_embeds } = await eng.textModel(inputs);
+      const dim = 512;
+      const out = [];
+      for (let i = 0; i < items.length; i++) {
+        out.push(l2Normalize(text_embeds.data.slice(i * dim, (i + 1) * dim)));
+      }
+      return out;
+    }
+    const typeVecs = await encodeBatch(CLIP_DECODE_TYPES);
+    const colorVecs = await encodeBatch(CLIP_DECODE_COLORS);
+    const fabricVecs = await encodeBatch(CLIP_DECODE_FABRICS);
+    const silVecs = await encodeBatch(CLIP_DECODE_SILHOUETTES);
+
+    // Center of the CLIP fashion cone (mean of all 25 garment-type vectors)
+    const fashionMean = new Array(512).fill(0);
+    typeVecs.forEach(v => { for (let d = 0; d < 512; d++) fashionMean[d] += v[d]; });
+    const meanUnit = l2Normalize(fashionMean);
+
+    eng.decodeBanks = { typeVecs, colorVecs, fabricVecs, silVecs, fashionMean: meanUnit };
+    return eng.decodeBanks;
+  }
+
+  async function synthesizeOrthogonalGaps(onProgress) {
+    const eng = await ensureClipLoaded(onProgress);
+    const banks = await ensureDecodeBanksLoaded(eng, onProgress);
+    if (onProgress) onProgress('Optimizing 25 mutually perpendicular 512-D vectors in your taste space...');
+
+    const pre = makePrecomputedModels();
+    const owned = state.items.filter(i => i.status === 'owned');
+    const ownedVecs = owned.map(i => i.clipEmbedding).filter(v => Array.isArray(v) && v.length === 512);
+
+    // Build user's 512-D personal taste gradient from OOD Taste + Owned Centroid + high-rated logs
+    const gTaste = new Array(512).fill(0);
+    let hasTasteSignal = false;
+    if (pre.pref512 && pre.pref512.muPos) {
+      hasTasteSignal = true;
+      for (let d = 0; d < 512; d++) {
+        gTaste[d] += pre.pref512.muPos[d] * 1.0 - (pre.pref512.muNeg ? pre.pref512.muNeg[d] * 0.45 : 0);
+      }
+    }
+    if (ownedVecs.length) {
+      hasTasteSignal = true;
+      const ownedMean = new Array(512).fill(0);
+      ownedVecs.forEach(v => { for (let d = 0; d < 512; d++) ownedMean[d] += v[d]; });
+      const ownedUnit = l2Normalize(ownedMean);
+      for (let d = 0; d < 512; d++) gTaste[d] += ownedUnit[d] * 0.35;
+    }
+    const tasteUnit = hasTasteSignal ? l2Normalize(gTaste) : null;
+
+    // Centered Gram-Schmidt Orthogonalization across 25 diverse starting seeds in fashion-difference space
+    const mu = banks.fashionMean;
+    const orthoBasis = []; // mutually perpendicular unit vectors u_k (orthogonal to mu and to each other)
+    const optVecs = [];
+
+    for (let k = 0; k < CLIP_DECODE_TYPES.length; k++) {
+      let v = banks.typeVecs[k].slice();
+
+      // 4 gradient ascent steps: pull toward user's 512-D taste, repel from redundant owned items
+      for (let step = 0; step < 4; step++) {
+        const grad = new Array(512).fill(0);
+        if (tasteUnit) {
+          for (let d = 0; d < 512; d++) grad[d] += 0.22 * tasteUnit[d];
+        }
+        ownedVecs.forEach(ov => {
+          const sim = cosineSimilarity(v, ov);
+          if (sim > 0.72) {
+            const push = (sim - 0.72) * 0.45;
+            for (let d = 0; d < 512; d++) grad[d] -= push * ov[d];
+          }
+        });
+        for (let d = 0; d < 512; d++) v[d] += 0.35 * grad[d];
+        v = l2Normalize(v);
+      }
+
+      // Project into centered fashion-difference subspace (orthogonal to fashionMean)
+      let u = v.slice();
+      const dotMu = cosineSimilarity(u, mu);
+      for (let d = 0; d < 512; d++) u[d] -= dotMu * mu[d];
+
+      // Strict Gram-Schmidt orthogonalization against all previously accepted u_0 ... u_{k-1}
+      for (let j = 0; j < orthoBasis.length; j++) {
+        const bj = orthoBasis[j];
+        let proj = 0;
+        for (let d = 0; d < 512; d++) proj += u[d] * bj[d];
+        for (let d = 0; d < 512; d++) u[d] -= proj * bj[d];
+      }
+      const uNorm = Math.sqrt(u.reduce((s, x) => s + x * x, 0)) || 1;
+      for (let d = 0; d < 512; d++) u[d] /= uNorm;
+      orthoBasis.push(u);
+
+      // Reconstruct valid 512-D CLIP vector on the fashion cone with orthogonal direction u_k
+      const vStar = new Array(512);
+      for (let d = 0; d < 512; d++) vStar[d] = 0.55 * mu[d] + 0.835 * u[d];
+      optVecs.push(l2Normalize(vStar));
+    }
+
+    // Measure empirical orthogonality (mean |cos(u_i, u_j)| across all 300 pairs)
+    let sumAbsCos = 0, pairCount = 0;
+    for (let i = 0; i < orthoBasis.length; i++) {
+      for (let j = i + 1; j < orthoBasis.length; j++) {
+        let dot = 0;
+        for (let d = 0; d < 512; d++) dot += orthoBasis[i][d] * orthoBasis[j][d];
+        sumAbsCos += Math.abs(dot);
+        pairCount++;
+      }
+    }
+    gapOrthoStats = {
+      count: optVecs.length,
+      avgAbsCos: pairCount ? (sumAbsCos / pairCount).toFixed(3) : '0.000'
+    };
+
+    if (onProgress) onProgress('Decoding 25 orthogonal vectors into concrete garment recipes & scoring...');
+    const usedTypes = {};
+    const usedColors = {};
+    const usedFabrics = {};
+    const decoded = [];
+
+    for (let k = 0; k < optVecs.length; k++) {
+      const vStar = optVecs[k];
+      // Decode garment type, color, fabric, silhouette via CLIP bank cosine similarity (with light anti-collapse)
+      let bestTypeIdx = 0, bestTypeScore = -99;
+      for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
+        const s = cosineSimilarity(vStar, banks.typeVecs[i]) - (usedTypes[i] || 0) * 0.08;
+        if (s > bestTypeScore) { bestTypeScore = s; bestTypeIdx = i; }
+      }
+      usedTypes[bestTypeIdx] = (usedTypes[bestTypeIdx] || 0) + 1;
+      const gType = CLIP_DECODE_TYPES[bestTypeIdx];
+
+      let bestColorIdx = 0, bestColorScore = -99;
+      for (let i = 0; i < CLIP_DECODE_COLORS.length; i++) {
+        const s = cosineSimilarity(vStar, banks.colorVecs[i]) - (usedColors[i] || 0) * 0.025;
+        if (s > bestColorScore) { bestColorScore = s; bestColorIdx = i; }
+      }
+      usedColors[bestColorIdx] = (usedColors[bestColorIdx] || 0) + 1;
+      const gColor = CLIP_DECODE_COLORS[bestColorIdx];
+
+      let bestFabIdx = 0, bestFabScore = -99;
+      for (let i = 0; i < CLIP_DECODE_FABRICS.length; i++) {
+        const s = cosineSimilarity(vStar, banks.fabricVecs[i]) - (usedFabrics[i] || 0) * 0.025;
+        if (s > bestFabScore) { bestFabScore = s; bestFabIdx = i; }
+      }
+      usedFabrics[bestFabIdx] = (usedFabrics[bestFabIdx] || 0) + 1;
+      const gFab = CLIP_DECODE_FABRICS[bestFabIdx];
+
+      let bestSilIdx = 0, bestSilScore = -99;
+      for (let i = 0; i < CLIP_DECODE_SILHOUETTES.length; i++) {
+        const s = cosineSimilarity(vStar, banks.silVecs[i]);
+        if (s > bestSilScore) { bestSilScore = s; bestSilIdx = i; }
+      }
+      const gSil = CLIP_DECODE_SILHOUETTES[bestSilIdx];
+
+      const meta = inferAttributesFromEmbedding(eng, vStar);
+      const warmth = gType.defaultWarmth || meta.inferred.warmth || 3;
+      const rain = gType.defaultRain || (gFab.label.includes('Waterproof') ? 1 : (meta.inferred.rain || 0));
+      const formality = meta.inferred.formality || 3;
+      const name = `${gSil.label} ${gColor.label} ${gType.label}`;
+      const seasons = warmth >= 4 ? ['fall', 'winter'] : warmth <= 1 ? ['spring', 'summer'] : ['spring', 'fall'];
+
+      decoded.push({
+        id: `synth_${k + 1}`,
+        category: gType.category,
+        name,
+        colorHex: gColor.hex,
+        warmth,
+        formality,
+        silhouette: gSil.value,
+        fabric: gFab.label,
+        comfort: 4,
+        rain,
+        price: 0,
+        seasons,
+        clipEmbedding: vStar,
+        clipInferred: meta.inferred,
+        why: `Decoded from orthogonal 512-D vector #${k + 1} · ${gFab.label} · Warmth ${warmth}/5 · Formality ${formality}/5.`
+      });
+    }
+
+    synthesizedGaps = decoded;
+    return decoded;
+  }
+
   // ---------- GAP ANALYSIS ----------
+  function renderGapPairsDrawer(drawerId, partners, candId, isWishlistItem) {
+    if (!partners || !partners.length) {
+      return `<div id="${drawerId}" class="hidden p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-500">No strong season-overlapping pairs (&ge;74 Style) found in your owned closet yet.</div>`;
+    }
+    return `
+      <div id="${drawerId}" class="hidden p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+        <div class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Matching Owned Pieces (${partners.length})</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-0.5">
+          ${partners.map(({ item: p, styleScore }) => `
+            <div class="flex items-center gap-2 p-1.5 rounded-md bg-white border border-slate-200">
+              <div class="w-8 h-8 rounded bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                ${safePhotoSrc(p.photo)
+                  ? `<img src="${safePhotoSrc(p.photo)}" alt="${escapeHtml(p.name)}" class="w-full h-full object-contain">`
+                  : `<span class="w-4 h-4 rounded-full border border-slate-300" style="background:${safeHex(p.colorHex)}"></span>`}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-[11px] font-semibold text-slate-800 truncate">${escapeHtml(p.name)}</div>
+                <div class="text-[10px] text-slate-500">${escapeHtml(p.category)} · <strong class="text-indigo-700">${styleScore} Style</strong></div>
+              </div>
+              ${isWishlistItem ? `<button type="button" data-pair-ids="${escapeHtml(candId)},${escapeHtml(p.id)}" class="gap-try-pair px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-semibold shrink-0">Try</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function renderGapView() {
+    const pre = makePrecomputedModels();
     const wish = state.items.filter(i => i.status === 'wishlist');
     const wishEl = document.getElementById('wishlistGapList');
     if (!wish.length) {
       wishEl.innerHTML = `<div class="bg-white rounded-xl border border-dashed border-slate-300 p-5 text-xs text-slate-500">No potential future clothes saved yet. Add a Wishlist piece to simulate its closet unlock value.</div>`;
     } else {
-      const ranked = wish.map(w => ({ item: w, sim: simulateUnlockCount(w) })).sort((a, b) => b.sim.unlocked - a.sim.unlocked);
-      wishEl.innerHTML = ranked.map(({ item, sim }) => `
-        <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
+      const ranked = wish.map(w => ({ item: w, sim: simulateUnlockCount(w, pre) })).sort((a, b) => b.sim.effectiveRank - a.sim.effectiveRank);
+      wishEl.innerHTML = ranked.map(({ item, sim }, idx) => {
+        const drawerId = `wishPairs_${idx}`;
+        return `
+        <div class="bg-white rounded-xl border ${sim.redundancy.isRedundant ? 'border-amber-200' : 'border-slate-200'} p-4 space-y-2.5">
           <div class="flex items-start justify-between gap-2">
             <div>
               <h4 class="text-sm font-bold text-slate-900">${escapeHtml(item.name)}</h4>
               <p class="text-xs text-slate-500">${escapeHtml(item.brand || 'Wishlist')} · $${item.price || '?'} · ${escapeHtml(item.category)}</p>
             </div>
-            <span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 text-xs font-bold">+${sim.unlocked} Outfits</span>
+            <button type="button" data-drawer="${drawerId}" class="gap-pairs-toggle px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold shrink-0 transition">Pairs w/ ${sim.unlocked} pieces &#9662;</button>
           </div>
-          ${renderDualBars(sim.topScore, sim.topCertainty)}
+          ${renderGapPairsDrawer(drawerId, sim.matchedPartners, item.id, true)}
+          ${sim.catSummary ? `<p class="text-[11px] text-slate-600">Pairs across: ${escapeHtml(sim.catSummary)}</p>` : ''}
+          ${sim.redundancy.isRedundant ? `<div class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900"><strong>Redundancy Alert:</strong> ~${sim.redundancy.simPct}% similar to your owned <strong>${escapeHtml(sim.redundancy.twin.name)}</strong> in the same season.</div>` : ''}
+          ${sim.gapTag ? `<div class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 font-medium">${escapeHtml(sim.gapTag)}</div>` : ''}
+          ${renderDualBars(sim.topScore, sim.topCertainty, 'Style')}
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     const archEl = document.getElementById('archetypeGapList');
-    const rankedArch = ARCHETYPE_GAPS.map(a => ({ arch: a, sim: simulateUnlockCount(a) })).sort((a, b) => b.sim.unlocked - a.sim.unlocked);
-    archEl.innerHTML = rankedArch.map(({ arch, sim }) => `
-      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
-        <div class="flex items-start justify-between gap-2">
-          <div>
-            <h4 class="text-sm font-bold text-slate-900">${escapeHtml(arch.name)}</h4>
-            <p class="text-xs text-slate-600 mt-0.5">${escapeHtml(arch.why)}</p>
-          </div>
-          <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold shrink-0">+${sim.unlocked} Outfits</span>
+    const filterBar = document.getElementById('gapCatFilterBar');
+    const orthoBadge = document.getElementById('gapOrthoBadge');
+    const isSynth = synthesizedGaps.length > 0;
+    filterBar.classList.toggle('hidden', !isSynth);
+    if (isSynth && gapOrthoStats) {
+      orthoBadge.classList.remove('hidden');
+      orthoBadge.textContent = `${gapOrthoStats.count} Orthogonal Vectors · Avg |cos| ${gapOrthoStats.avgAbsCos}`;
+    } else {
+      orthoBadge.classList.add('hidden');
+    }
+
+    if (!isSynth) {
+      archEl.innerHTML = `
+        <div class="bg-white rounded-xl border border-dashed border-indigo-300 p-6 text-center space-y-2">
+          <p class="text-xs font-semibold text-slate-800">No 512-D gap vectors synthesized yet.</p>
+          <p class="text-xs text-slate-500 max-w-md mx-auto">Click <strong>Synthesize 25 Orthogonal Gaps (512-D)</strong> above to optimize 25 mutually perpendicular vectors in your closet's taste space and decode them into tailored garment recipes.</p>
         </div>
-        ${renderDualBars(sim.topScore, sim.topCertainty)}
+      `;
+      return;
+    }
+
+    const pool = synthesizedGaps.filter(g => gapCatFilter === 'all' || g.category === gapCatFilter);
+    const evaluated = pool.map(a => ({ arch: a, sim: simulateUnlockCount(a, pre) }));
+    evaluated.sort((a, b) => {
+      if (gapSortMode === 'style') return (b.sim.topScore - a.sim.topScore) || (b.sim.unlocked - a.sim.unlocked);
+      if (gapSortMode === 'matches') return (b.sim.unlocked - a.sim.unlocked) || (b.sim.topScore - a.sim.topScore);
+      if (gapSortMode === 'novel') return ((a.sim.redundancy.simPct || 0) - (b.sim.redundancy.simPct || 0)) || (b.sim.topScore - a.sim.topScore);
+      if (gapSortMode === 'coverage') return ((b.sim.gapTag ? 1 : 0) - (a.sim.gapTag ? 1 : 0)) || (b.sim.effectiveRank - a.sim.effectiveRank);
+      if (gapSortMode === 'certainty') return (b.sim.topCertainty - a.sim.topCertainty) || (b.sim.topScore - a.sim.topScore);
+      return (b.sim.effectiveRank - a.sim.effectiveRank) || (b.sim.topScore - a.sim.topScore);
+    });
+
+    archEl.innerHTML = evaluated.map(({ arch, sim }, idx) => {
+      const drawerId = `synthPairs_${idx}`;
+      return `
+      <div class="bg-white rounded-xl border ${sim.redundancy.isRedundant ? 'border-amber-200' : 'border-slate-200'} p-4 space-y-2.5">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-start gap-2.5">
+            <span class="w-4 h-4 rounded-full border border-slate-300 mt-0.5 shrink-0" style="background:${safeHex(arch.colorHex)}"></span>
+            <div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <h4 class="text-sm font-bold text-slate-900">${escapeHtml(arch.name)}</h4>
+                <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold uppercase">${escapeHtml(arch.category)}</span>
+                <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">512-D Decoded</span>
+              </div>
+              <p class="text-xs text-slate-600 mt-0.5">${escapeHtml(arch.why)}</p>
+            </div>
+          </div>
+          <button type="button" data-drawer="${drawerId}" class="gap-pairs-toggle px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold shrink-0 transition">Pairs w/ ${sim.unlocked} pieces &#9662;</button>
+        </div>
+        ${renderGapPairsDrawer(drawerId, sim.matchedPartners, arch.id, false)}
+        ${sim.catSummary ? `<p class="text-[11px] text-slate-600">Pairs across: ${escapeHtml(sim.catSummary)}</p>` : ''}
+        ${sim.redundancy.isRedundant ? `<div class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900"><strong>Already Covered:</strong> ~${sim.redundancy.simPct}% overlap with your owned <strong>${escapeHtml(sim.redundancy.twin.name)}</strong>.</div>` : (sim.redundancy.twin ? `<p class="text-[11px] text-slate-500">Closest owned piece: ${escapeHtml(sim.redundancy.twin.name)} (~${sim.redundancy.simPct}% similarity)</p>` : '')}
+        ${sim.gapTag ? `<div class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 font-medium">${escapeHtml(sim.gapTag)}</div>` : ''}
+        ${renderDualBars(sim.topScore, sim.topCertainty, 'Style')}
         <button type="button" data-arch="${arch.id}" class="save-arch-btn px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-semibold">
           + Save to Future Wishlist
         </button>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   // ---------- SEASON-AWARE RETIRE / DONATE ----------
   function renderRetireView() {
     const owned = state.items.filter(i => i.status === 'owned');
+    const pre = makePrecomputedModels();
     const curSeason = getCurrentAuditSeason();
     const curLabel = curSeason.charAt(0).toUpperCase() + curSeason.slice(1);
+    const freqRank = { staple: 4, regular: 3, rare: 2, never: 1, '': 0 };
+
     const scored = owned.map(it => {
-      const ev = evaluateSingleItem(it);
+      const ev = evaluateSingleItem(it, pre);
       const freq = getItemWearFreq(it);
       const sInfo = getItemSeasons(it);
       const inSeason = sInfo.list.includes(curSeason);
@@ -3812,30 +4294,45 @@
 
     scored.forEach(entry => {
       const { it, ev, freq, sInfo, inSeason } = entry;
-      const poorComfortOrFit = (it.comfort !== null && it.comfort <= 2) || (ev.score < 64 && ev.certainty >= 60);
+      const poorComfortOrOrphan = (it.comfort !== null && it.comfort <= 2) || (ev.score < 64 && ev.strongPairs === 0 && ev.certainty >= 60);
       const isLowUse = freq === 'never' || freq === 'rare';
+      const red = ev.redundancy;
+      const twin = red && red.isRedundant ? red.twin : null;
+      const twinPreferred = Boolean(twin && (
+        freqRank[getItemWearFreq(twin)] > freqRank[freq] ||
+        ((twin.comfort || 3) > (it.comfort || 3) && freqRank[getItemWearFreq(twin)] >= freqRank[freq])
+      ));
 
-      if (poorComfortOrFit) {
+      if (poorComfortOrOrphan) {
         entry.reason = it.comfort !== null && it.comfort <= 2
           ? `Rated uncomfortable (${it.comfort}/5) regardless of season.`
-          : `Low outfit compatibility (${ev.score}/100) with high certainty.`;
+          : `Low pairwise style compatibility (${ev.score}/100, 0 strong season pairs) with high certainty.`;
         highRetire.push(entry);
-      } else if (isLowUse) {
-        if (!inSeason) {
+      } else if (!inSeason) {
+        if (isLowUse || !freq) {
           const nextS = sInfo.list.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' / ');
-          entry.reason = `Marked "${FREQ_LABELS[freq]}", but it is a ${nextS} piece (${sInfo.inferred ? 'inferred from warmth' : 'tagged'})—re-check in ${nextS}.`;
+          entry.reason = freq
+            ? `Marked "${FREQ_LABELS[freq]}", but it is a ${nextS} piece (${sInfo.inferred ? 'inferred from warmth' : 'tagged'})—re-check in ${nextS}.`
+            : `Out-of-season ${nextS} piece with unset wear frequency—held until ${nextS}.`;
           seasonalHold.push(entry);
-        } else if (ev.certainty >= 50) {
-          entry.reason = `Active in ${curLabel} right now, yet marked "${FREQ_LABELS[freq]}"—strong candidate to retire.`;
+        }
+      } else if (isLowUse) {
+        const dupNote = twin ? ` Also ~${red.simPct}% similar to ${twin.name}.` : '';
+        if (ev.certainty >= 50) {
+          entry.reason = `Active in ${curLabel} right now, yet marked "${FREQ_LABELS[freq]}" (${ev.strongPairs} strong season pairs).${dupNote}`;
           highRetire.push(entry);
         } else {
-          entry.reason = `Marked "${FREQ_LABELS[freq]}" in ${curLabel}, but certainty is still low (${ev.certainty}%).`;
+          entry.reason = `Marked "${FREQ_LABELS[freq]}" in ${curLabel}, but certainty is still low (${ev.certainty}%).${dupNote}`;
           testFirst.push(entry);
         }
+      } else if (twinPreferred) {
+        entry.reason = `Redundant duplicate: ~${red.simPct}% style & season overlap with "${twin.name}", which you wear more or rate more comfortable.`;
+        if (ev.certainty >= 55) highRetire.push(entry);
+        else testFirst.push(entry);
       } else if (!freq || ev.certainty < 50) {
         entry.reason = !freq
-          ? `Wear frequency not set yet (${ev.completeness}% profile completeness).`
-          : `Low certainty (${ev.certainty}%)—try styling once before judging.`;
+          ? `Active in ${curLabel}, wear frequency not set yet (${ev.completeness}% profile completeness · ${ev.strongPairs} strong pairs).`
+          : `Low certainty (${ev.certainty}%)—try styling once before judging (${ev.strongPairs} strong pairs).`;
         testFirst.push(entry);
       }
     });
@@ -3850,7 +4347,7 @@
           </div>
           <button type="button" data-donate="${it.id}" class="donate-btn px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shrink-0">Donate</button>
         </div>
-        ${renderDualBars(ev.score, ev.certainty)}
+        ${renderDualBars(ev.score, ev.certainty, 'Style')}
       </div>
     `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No retire flags for ${curLabel}—your in-season closet is working well!</div>`;
 
@@ -3864,9 +4361,9 @@
           </div>
           <button type="button" data-action="edit" data-id="${it.id}" class="item-act px-2.5 py-1 rounded-lg border border-blue-200 text-blue-800 text-[11px] font-semibold shrink-0">Edit</button>
         </div>
-        ${renderDualBars(ev.score, ev.certainty)}
+        ${renderDualBars(ev.score, ev.certainty, 'Style')}
       </div>
-    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No out-of-season low-use items held right now.</div>`;
+    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No out-of-season items held right now.</div>`;
 
     const testEl = document.getElementById('retireTestList');
     testEl.innerHTML = testFirst.length ? testFirst.map(({ it, ev, reason }) => `
@@ -3878,9 +4375,9 @@
           </div>
           <button type="button" data-action="edit" data-id="${it.id}" class="item-act px-2.5 py-1 rounded-lg border border-amber-300 text-amber-900 text-[11px] font-semibold shrink-0">Set Freq</button>
         </div>
-        ${renderDualBars(ev.score, ev.certainty)}
+        ${renderDualBars(ev.score, ev.certainty, 'Style')}
       </div>
-    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">Every piece has frequency &amp; certainty data!</div>`;
+    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">Every in-season piece has frequency &amp; certainty data!</div>`;
   }
 
   // ---------- INSPIRATION PHOTO MATCHER (CROP + 512-D TEXT NUDGE) ----------
@@ -3941,7 +4438,7 @@
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5">
               <select data-slot="${idx}" class="inspo-cat text-[10px] font-bold uppercase text-indigo-800 bg-indigo-50 rounded px-1 py-0.5">
-                ${['outerwear','top','bottom','shoes','accessory'].map(c => `<option value="${c}" ${s.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+                ${['outerwear','top','bottom','fullbody','shoes','accessory'].map(c => `<option value="${c}" ${s.category === c ? 'selected' : ''}>${c === 'fullbody' ? 'full body' : c}</option>`).join('')}
               </select>
               ${has512 ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-700 text-white">512-D</span>` : ''}
             </div>
@@ -4787,18 +5284,43 @@
       showToast('Deleted logged outfit & recalculated model scores.');
     }
 
+    const pairToggle = e.target.closest('.gap-pairs-toggle');
+    if (pairToggle) {
+      const dr = document.getElementById(pairToggle.dataset.drawer);
+      if (dr) dr.classList.toggle('hidden');
+      return;
+    }
+
+    const tryPairBtn = e.target.closest('.gap-try-pair');
+    if (tryPairBtn) {
+      const ids = (tryPairBtn.dataset.pairIds || '').split(',').filter(Boolean);
+      if (ids.length >= 2) {
+        builderItemIds = ids;
+        document.getElementById('togglePairingWishlist').checked = true;
+        switchTab('pairing');
+        showToast('Loaded pair into Live Pairing lookbook!');
+      }
+      return;
+    }
+
     const archBtn = e.target.closest('.save-arch-btn');
     if (archBtn) {
-      const arch = ARCHETYPE_GAPS.find(a => a.id === archBtn.dataset.arch);
+      const arch = synthesizedGaps.find(a => a.id === archBtn.dataset.arch) || ARCHETYPE_GAPS.find(a => a.id === archBtn.dataset.arch);
       if (arch) {
         state.items.unshift({
-          id: 'w' + Date.now(), status: 'wishlist', category: arch.category, name: arch.name, brand: 'Target Gap',
+          id: 'w' + Date.now(), status: 'wishlist', category: arch.category, name: arch.name, brand: arch.clipEmbedding ? '512-D Synthesized Gap' : 'Target Gap',
           colorHex: arch.colorHex, warmth: arch.warmth, formality: arch.formality, silhouette: arch.silhouette,
-          fabric: arch.fabric, comfort: arch.comfort, rain: arch.rain, price: arch.price, wears: 0,
-          sizeLabel: '', measurement: '', fitFeedback: 'untested', photo: '', clipEmbedding: null, clipInferred: null
+          fabric: arch.fabric, comfort: arch.comfort, rain: arch.rain, price: arch.price || 0, wearFreq: '',
+          seasons: Array.isArray(arch.seasons) ? arch.seasons.slice() : [],
+          sizeLabel: '', measurement: '', fitFeedback: 'untested', photo: '',
+          clipEmbedding: Array.isArray(arch.clipEmbedding) ? arch.clipEmbedding.slice() : null,
+          clipImageEmbedding: null,
+          clipInferred: arch.clipInferred || null,
+          clipTextNote: arch.clipEmbedding ? `${arch.silhouette} ${arch.name}, ${arch.fabric}` : '',
+          clipTextWeight: 100
         });
         saveState(); renderAll();
-        showToast(`Saved "${arch.name}" to Potential Future Clothes.`);
+        showToast(`Saved "${arch.name}"${arch.clipEmbedding ? ' (with 512-D CLIP vector)' : ''} to Potential Future Clothes.`);
       }
     }
 
@@ -5959,6 +6481,42 @@
       renderAll();
       showToast('Cleared wardrobe—ready to add your own pieces.');
     });
+  });
+
+  document.getElementById('btnSynthesizeGaps').addEventListener('click', async () => {
+    const btn = document.getElementById('btnSynthesizeGaps');
+    const statusEl = document.getElementById('gapSynthStatus');
+    btn.disabled = true;
+    statusEl.classList.remove('hidden');
+    statusEl.textContent = 'Initializing CLIP-ViT-B/32 for 512-D orthogonal gap synthesis...';
+    try {
+      await synthesizeOrthogonalGaps(msg => { statusEl.textContent = msg; });
+      statusEl.classList.add('hidden');
+      renderGapView();
+      showToast('Synthesized & decoded 25 mutually orthogonal 512-D wardrobe gaps!');
+    } catch (err) {
+      statusEl.textContent = 'Could not load CLIP right now—check internet access to HuggingFace/jsDelivr.';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('gapCatFilterBar').addEventListener('click', e => {
+    const btn = e.target.closest('.gcat-btn');
+    if (!btn) return;
+    gapCatFilter = btn.dataset.gcat;
+    document.querySelectorAll('.gcat-btn').forEach(b => {
+      const active = b === btn;
+      b.className = active
+        ? 'gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 text-white'
+        : 'gcat-btn px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200';
+    });
+    renderGapView();
+  });
+
+  document.getElementById('gapSortSelect').addEventListener('change', e => {
+    gapSortMode = e.target.value;
+    renderGapView();
   });
 
   document.getElementById('weatherCity').addEventListener('change', e => setSavedCity(e.target.value));
