@@ -318,8 +318,19 @@
             </select>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <input type="file" id="tPhoto" accept="image/*" class="flex-1 text-[11px] text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-purple-700 file:text-white hover:file:bg-purple-800">
+            <div id="tPhotoPreview" class="hidden w-11 h-11 rounded-lg border border-purple-200 bg-white overflow-hidden shrink-0 items-center justify-center p-0.5"></div>
+            <input type="file" id="tPhoto" accept="image/*" class="flex-1 min-w-[160px] text-[11px] text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-purple-700 file:text-white hover:file:bg-purple-800">
             <input type="color" id="tColorHex" value="#475569" class="w-8 h-7 rounded border border-purple-200 cursor-pointer p-0.5" title="Color">
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <label class="inline-flex items-center gap-1.5 text-purple-950 font-medium cursor-pointer select-none">
+              <input type="checkbox" id="tAutoRmbg" checked class="rounded border-purple-300 text-purple-700 focus:ring-purple-600">
+              <span>AI background removal (RMBG-1.4)</span>
+            </label>
+            <div class="flex items-center gap-1.5">
+              <button type="button" id="btnRunTryOnRmbg" class="hidden px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-800 font-semibold hover:bg-purple-100">Remove BG</button>
+              <button type="button" id="btnRevertTryOnRaw" class="hidden px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-100">Use Raw Photo</button>
+            </div>
           </div>
           <input type="text" id="tClipText" placeholder="Optional 512-D text note (e.g. boxy brown suede bomber)" class="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -462,6 +473,12 @@
             <option value="accessory">Accessory</option>
           </select>
           <input type="file" id="stPhoto" accept="image/*" class="text-[11px] text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-purple-700 file:text-white">
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="inline-flex items-center gap-1.5 text-[11px] text-purple-950 font-medium cursor-pointer select-none">
+            <input type="checkbox" id="stAutoRmbg" checked class="rounded border-purple-300 text-purple-700 focus:ring-purple-600">
+            <span>AI background removal (RMBG-1.4)</span>
+          </label>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <input type="text" id="stClipText" placeholder="Optional 512-D text note (e.g. oversized camel wool coat)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
@@ -6096,6 +6113,7 @@
   });
 
   let pendingTryOnPhoto = '';
+  let pendingTryOnRawPhoto = '';
   let pendingTryOnClip = null;
 
   document.getElementById('btnToggleTryOn').addEventListener('click', () => {
@@ -6105,27 +6123,73 @@
     document.getElementById('tryOnDrawer').classList.add('hidden');
   });
 
+  async function processTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const st = document.getElementById('tClipStatus');
+    const prev = document.getElementById('tPhotoPreview');
+    const btnRun = document.getElementById('btnRunTryOnRmbg');
+    const btnRev = document.getElementById('btnRevertTryOnRaw');
+    st.classList.remove('hidden');
+    pendingTryOnRawPhoto = rawDataUrl;
+    pendingTryOnPhoto = rawDataUrl;
+    document.getElementById('tColorHex').value = safeHex(rawHex);
+    prev.innerHTML = `<img src="${rawDataUrl}" class="w-full h-full object-contain" alt="Try-on preview">`;
+    prev.classList.remove('hidden');
+    prev.classList.add('flex');
+    btnRev.classList.add('hidden');
+    btnRun.classList.toggle('hidden', runNeuralRmbg);
+
+    let clipTargetUrl = rawDataUrl;
+    if (runNeuralRmbg) {
+      st.textContent = 'Step 1/2: Removing background with RMBG-1.4...';
+      try {
+        const cut = await runRmbgCutout(rawDataUrl, msg => { st.textContent = msg; });
+        pendingTryOnPhoto = cut.cutoutPng;
+        clipTargetUrl = cut.clipInputJpg;
+        document.getElementById('tColorHex').value = safeHex(cut.dominantHex);
+        prev.innerHTML = `<img src="${cut.cutoutPng}" class="w-full h-full object-contain" alt="Try-on cutout preview">`;
+        btnRev.classList.remove('hidden');
+        btnRun.classList.add('hidden');
+      } catch (rmbgErr) {
+        st.textContent = 'RMBG-1.4 unavailable—falling back to raw photo for CLIP...';
+        btnRun.classList.remove('hidden');
+      }
+    }
+
+    st.textContent = runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on try-on photo...';
+    try {
+      const txt = document.getElementById('tClipText').value.trim();
+      const res = await analyzeImageWithClip(clipTargetUrl, msg => { st.textContent = msg; }, txt, 0.35);
+      pendingTryOnClip = res;
+      st.textContent = `CLIP 512-D ready: ${res.inferred.category} · warmth ${res.inferred.warmth}/5 · ${res.inferred.silhouette}`;
+      if (!document.getElementById('tName').value.trim()) {
+        document.getElementById('tName').value = `Store ${res.inferred.silhouette} ${res.inferred.category}`;
+      }
+    } catch (err) {
+      st.textContent = 'Photo attached (CLIP unavailable right now—color extracted).';
+    }
+  }
+
   document.getElementById('tPhoto').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-    const st = document.getElementById('tClipStatus');
-    st.classList.remove('hidden');
-    st.textContent = 'Compressing photo & running CLIP-ViT-B/32...';
-    compressAndExtractColor(file, async (dataUrl, hex) => {
-      pendingTryOnPhoto = dataUrl;
-      document.getElementById('tColorHex').value = hex;
-      try {
-        const txt = document.getElementById('tClipText').value.trim();
-        const res = await analyzeImageWithClip(dataUrl, msg => { st.textContent = msg; }, txt, 0.35);
-        pendingTryOnClip = res;
-        st.textContent = `CLIP 512-D ready: ${res.inferred.category} · warmth ${res.inferred.warmth}/5 · ${res.inferred.silhouette}`;
-        if (!document.getElementById('tName').value.trim()) {
-          document.getElementById('tName').value = `Store ${res.inferred.silhouette} ${res.inferred.category}`;
-        }
-      } catch (err) {
-        st.textContent = 'Photo attached (CLIP unavailable right now—color extracted).';
-      }
+    pendingTryOnClip = null;
+    const autoRmbg = document.getElementById('tAutoRmbg').checked;
+    compressAndExtractColor(file, (dataUrl, hex) => {
+      processTryOnPhoto(dataUrl, hex, autoRmbg);
     });
+  });
+
+  document.getElementById('btnRunTryOnRmbg').addEventListener('click', () => {
+    const src = pendingTryOnRawPhoto || pendingTryOnPhoto;
+    if (!src) return;
+    pendingTryOnClip = null;
+    processTryOnPhoto(src, document.getElementById('tColorHex').value, true);
+  });
+
+  document.getElementById('btnRevertTryOnRaw').addEventListener('click', () => {
+    if (!pendingTryOnRawPhoto) return;
+    pendingTryOnClip = null;
+    processTryOnPhoto(pendingTryOnRawPhoto, document.getElementById('tColorHex').value, false);
   });
 
   document.getElementById('btnAddTryOnToTray').addEventListener('click', async () => {
@@ -6216,7 +6280,12 @@
     ['tSizeLabel','tPrice','tWarmth','tFormality','tSilhouette','tComfort','tRain'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('tFitFeedback').value = 'untested';
     pendingTryOnPhoto = '';
+    pendingTryOnRawPhoto = '';
     pendingTryOnClip = null;
+    const prev = document.getElementById('tPhotoPreview');
+    if (prev) { prev.innerHTML = ''; prev.classList.add('hidden'); prev.classList.remove('flex'); }
+    document.getElementById('btnRunTryOnRmbg').classList.add('hidden');
+    document.getElementById('btnRevertTryOnRaw').classList.add('hidden');
     st.classList.add('hidden');
     document.getElementById('tryOnDrawer').classList.add('hidden');
 
@@ -6325,14 +6394,27 @@
     const file = e.target.files[0];
     if (!file) return;
     const st = document.getElementById('stClipStatus');
+    const autoRmbg = document.getElementById('stAutoRmbg') && document.getElementById('stAutoRmbg').checked;
     st.classList.remove('hidden');
-    st.textContent = 'Running CLIP-ViT-B/32 on anchor photo...';
+    st.textContent = autoRmbg ? 'Step 1/2: Removing background with RMBG-1.4...' : 'Running CLIP-ViT-B/32 on anchor photo...';
     compressAndExtractColor(file, async (dataUrl, hex) => {
       pendingSugTryPhoto = dataUrl;
       pendingSugTryHex = hex;
+      let clipTargetUrl = dataUrl;
+      if (autoRmbg) {
+        try {
+          const cut = await runRmbgCutout(dataUrl, msg => { st.textContent = msg; });
+          pendingSugTryPhoto = cut.cutoutPng;
+          pendingSugTryHex = cut.dominantHex;
+          clipTargetUrl = cut.clipInputJpg;
+        } catch (rmbgErr) {
+          st.textContent = 'RMBG-1.4 unavailable—falling back to raw photo for CLIP...';
+        }
+      }
+      st.textContent = autoRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on anchor photo...';
       try {
         const txt = document.getElementById('stClipText').value.trim();
-        const res = await analyzeImageWithClip(dataUrl, msg => { st.textContent = msg; }, txt, 0.35);
+        const res = await analyzeImageWithClip(clipTargetUrl, msg => { st.textContent = msg; }, txt, 0.35);
         pendingSugTryClip = res;
         st.textContent = `CLIP 512-D ready: ${res.inferred.category} · warmth ${res.inferred.warmth}/5`;
         if (!document.getElementById('stName').value.trim()) {
