@@ -4641,23 +4641,39 @@
     };
 
     if (onProgress) onProgress('Decoding 25 orthogonal vectors into concrete garment recipes & scoring...');
-    // Precompute Dual Ridge (mu, sigma) for each color, fabric, and silhouette bank vector
-    const decodeBeta = gapCertMode === 'safe' ? -0.12 : gapCertMode === 'explore' ? 0.15 : 0.0;
-    function evalBankRidge(vec) {
-      if (ridge.n === 0) return { mu: 0, sigma: 0 };
-      const kVec = ridge.samples.map(s => Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vec, s.vMean))));
-      let delta = 0;
-      for (let i = 0; i < ridge.n; i++) delta += ridge.alpha[i] * kVec[i];
-      const muNorm = Math.max(-1, Math.min(1, delta / 35));
-      const uVec = solveLinearSystem(ridge.K, kVec);
-      let explained = 0;
-      for (let i = 0; i < ridge.n; i++) explained += kVec[i] * uVec[i];
-      const sigma = Math.sqrt(Math.max(0.05, 1 - Math.max(0, Math.min(0.999, explained))));
-      return { mu: muNorm, sigma };
+    // Precompute bank-normalized Dual Ridge (mu, sigma) in [-1, +1] to overcome CLIP image-text modality gap
+    const decodeBeta = gapCertMode === 'safe' ? -0.038 : gapCertMode === 'explore' ? 0.042 : 0.0;
+    const decodeMuW = 0.022;
+    function evalBankNormalized(bankVecs) {
+      if (ridge.n === 0 || !bankVecs.length) return bankVecs.map(() => ({ mu: 0, sigma: 0 }));
+      const rawSims = bankVecs.map(vec => ridge.samples.map(s => cosineSimilarity(vec, s.vMean)));
+      let maxSim = -Infinity;
+      rawSims.forEach(row => row.forEach(v => { if (v > maxSim) maxSim = v; }));
+      const rawMu = [];
+      const rawSigma = [];
+      for (let idx = 0; idx < bankVecs.length; idx++) {
+        // Shift text-to-image cosine relative to bank peak so modality gap doesn't crush k_i to ~0.10
+        const kVec = rawSims[idx].map(sim => Math.exp(-2.8 * Math.max(0, (maxSim - sim) / 0.12)));
+        let delta = 0;
+        for (let i = 0; i < ridge.n; i++) delta += ridge.alpha[i] * kVec[i];
+        const uVec = solveLinearSystem(ridge.K, kVec);
+        let explained = 0;
+        for (let i = 0; i < ridge.n; i++) explained += kVec[i] * uVec[i];
+        rawMu.push(delta);
+        rawSigma.push(Math.sqrt(Math.max(0.02, 1 - Math.max(0, Math.min(0.999, explained)))));
+      }
+      const normArr = arr => {
+        const mn = Math.min(...arr), mx = Math.max(...arr);
+        if (mx - mn < 1e-6) return arr.map(() => 0);
+        return arr.map(x => 2 * ((x - mn) / (mx - mn)) - 1);
+      };
+      const muN = normArr(rawMu);
+      const sigN = normArr(rawSigma);
+      return bankVecs.map((_, i) => ({ mu: muN[i], sigma: sigN[i] }));
     }
-    const colorRidge = banks.colorVecs.map(evalBankRidge);
-    const fabRidge = banks.fabricVecs.map(evalBankRidge);
-    const silRidge = banks.silVecs.map(evalBankRidge);
+    const colorRidge = evalBankNormalized(banks.colorVecs);
+    const fabRidge = evalBankNormalized(banks.fabricVecs);
+    const silRidge = evalBankNormalized(banks.silVecs);
 
     const usedTypes = {};
     const usedColors = {};
@@ -4667,7 +4683,7 @@
     for (let k = 0; k < optVecs.length; k++) {
       const vStar = optVecs[k].vec;
       const isTasteExplorer = optVecs[k].isTasteExplorer;
-      // Decode garment type, color, fabric, silhouette using cos(v*, c) + 0.10*mu(c) + beta*sigma(c)
+      // Decode garment type, color, fabric, silhouette using cos(v*, c) + 0.022*mu_norm(c) + beta*sigma_norm(c)
       let bestTypeIdx = 0, bestTypeScore = -99;
       for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
         const s = cosineSimilarity(vStar, banks.typeVecs[i]) - (usedTypes[i] || 0) * 0.08;
@@ -4678,7 +4694,7 @@
 
       let bestColorIdx = 0, bestColorScore = -99;
       for (let i = 0; i < CLIP_DECODE_COLORS.length; i++) {
-        const acq = ridge.n > 0 ? (0.10 * colorRidge[i].mu + decodeBeta * colorRidge[i].sigma) : 0;
+        const acq = ridge.n > 0 ? (decodeMuW * colorRidge[i].mu + decodeBeta * colorRidge[i].sigma) : 0;
         const s = cosineSimilarity(vStar, banks.colorVecs[i]) + acq - (usedColors[i] || 0) * 0.025;
         if (s > bestColorScore) { bestColorScore = s; bestColorIdx = i; }
       }
@@ -4687,7 +4703,7 @@
 
       let bestFabIdx = 0, bestFabScore = -99;
       for (let i = 0; i < CLIP_DECODE_FABRICS.length; i++) {
-        const acq = ridge.n > 0 ? (0.10 * fabRidge[i].mu + decodeBeta * fabRidge[i].sigma) : 0;
+        const acq = ridge.n > 0 ? (decodeMuW * fabRidge[i].mu + decodeBeta * fabRidge[i].sigma) : 0;
         const s = cosineSimilarity(vStar, banks.fabricVecs[i]) + acq - (usedFabrics[i] || 0) * 0.025;
         if (s > bestFabScore) { bestFabScore = s; bestFabIdx = i; }
       }
@@ -4696,7 +4712,7 @@
 
       let bestSilIdx = 0, bestSilScore = -99;
       for (let i = 0; i < CLIP_DECODE_SILHOUETTES.length; i++) {
-        const acq = ridge.n > 0 ? (0.10 * silRidge[i].mu + decodeBeta * silRidge[i].sigma) : 0;
+        const acq = ridge.n > 0 ? (decodeMuW * silRidge[i].mu + decodeBeta * silRidge[i].sigma) : 0;
         const s = cosineSimilarity(vStar, banks.silVecs[i]) + acq;
         if (s > bestSilScore) { bestSilScore = s; bestSilIdx = i; }
       }
