@@ -95,7 +95,7 @@
       <div class="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm tracking-tight">AI</div>
       <div>
         <h1 class="text-base font-bold text-slate-900 leading-tight">Atelier Index</h1>
-        <p class="text-xs text-slate-500">In-Browser CLIP-ViT-B/32 Wardrobe Curator</p>
+        <p class="text-xs text-slate-500">In-Browser Marqo-FashionCLIP Wardrobe Curator</p>
       </div>
     </div>
 
@@ -114,7 +114,7 @@
 
     <!-- Local Storage & CLIP Model Controls -->
     <div class="flex flex-wrap items-center gap-2">
-      <button type="button" id="btnClipStatus" class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 transition" title="Load Xenova/clip-vit-base-patch32 in your browser">
+      <button type="button" id="btnClipStatus" class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 transition" title="Load Marqo/marqo-fashionCLIP in your browser">
         <span id="clipDot" class="w-2 h-2 rounded-full bg-indigo-500"></span>
         <span id="clipStatusText">Load CLIP Vision</span>
       </button>
@@ -266,12 +266,13 @@
           </select>
         </div>
         <div>
-          <label for="occasionSelect" class="block text-xs font-medium text-slate-700 mb-1">Occasion</label>
+          <label for="occasionSelect" class="block text-xs font-medium text-slate-700 mb-1">Target Formality (1–5)</label>
           <select id="occasionSelect" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white">
-            <option value="casual">Everyday Casual</option>
-            <option value="work">Work / Smart Casual</option>
-            <option value="dinner">Dinner / Going Out</option>
-            <option value="travel">Travel / Long Walk</option>
+            <option value="1">1 · Lounge / Active</option>
+            <option value="2" selected>2 · Casual</option>
+            <option value="3">3 · Smart Casual</option>
+            <option value="4">4 · Tailored / Office</option>
+            <option value="5">5 · Formal / Black-Tie</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
@@ -635,7 +636,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-base font-bold text-slate-900">Inspiration Photo Matcher (CLIP 512-D Powered)</h2>
-          <p class="text-xs text-slate-600 mt-0.5">Upload any outfit photo to run real CLIP-ViT-B/32 visual embedding similarity against your closet, auto-infer its vibe/warmth/formality, and spot missing pieces.</p>
+          <p class="text-xs text-slate-600 mt-0.5">Upload any outfit photo to run real Marqo-FashionCLIP visual embedding similarity against your closet, auto-infer its vibe/warmth/formality, and spot missing pieces.</p>
         </div>
 
       </div>
@@ -670,12 +671,13 @@
               <input type="number" id="inspoTemp" value="56" min="15" max="95" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
             </div>
             <div>
-              <label for="inspoOccasion" class="block text-[11px] font-medium text-slate-600 mb-1">Target Occasion</label>
+              <label for="inspoOccasion" class="block text-[11px] font-medium text-slate-600 mb-1">Target Formality (1–5)</label>
               <select id="inspoOccasion" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
-                <option value="work">Work / Smart</option>
-                <option value="casual">Casual</option>
-                <option value="dinner">Dinner</option>
-                <option value="travel">Travel</option>
+                <option value="1">1 · Lounge / Active</option>
+                <option value="2">2 · Casual</option>
+                <option value="3" selected>3 · Smart Casual</option>
+                <option value="4">4 · Tailored / Office</option>
+                <option value="5">5 · Formal / Black-Tie</option>
               </select>
             </div>
           </div>
@@ -845,7 +847,7 @@
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="max-w-2xl space-y-1.5">
           <h2 class="text-xl font-bold text-slate-900">How Atelier Index Works Under the Hood</h2>
-          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">No neural network is trained per closet. Instead, in-browser <strong>briaai/RMBG-1.4</strong> removes photo backgrounds and frozen <strong>CLIP-ViT-B/32</strong> encodes each garment into a <strong>512-D vector</strong> (nudged by your fabric and attribute tags), while two closed-form <strong>Dual Ridge Regression</strong> models compute separate <strong>Style</strong> (weather-free) and <strong>Weather / Indoor</strong> scores alongside <strong>Certainty</strong>.</p>
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">No neural network is trained per closet. Instead, in-browser <strong>briaai/RMBG-1.4</strong> removes photo backgrounds and frozen <strong>Marqo-FashionCLIP</strong> encodes each garment into a <strong>512-D vector</strong> (closet-mean centered &amp; nudged by your fabric and attribute tags), while two closed-form <strong>Dual Ridge Regression</strong> models compute separate <strong>Style</strong> (pure aesthetic + formality), <strong>Weather / Indoor</strong>, and <strong>Comfort</strong> scores alongside <strong>Certainty</strong>.</p>
         </div>
         <div id="modelTelemetry" class="grid grid-cols-2 gap-2 text-xs shrink-0"></div>
       </div>
@@ -906,7 +908,7 @@
 
         <ul class="text-xs text-slate-600 space-y-1.5 list-disc pl-4">
           <li><strong>Weather-Independent Style Score:</strong> Blends Aesthetic Dual Ridge + OOD Taste + Pairwise 512-D (`78%`) with Comfort &amp; Formality (`22%`)—so changing temperature or rain never alters an outfit's <strong>Style</strong> score.</li>
-          <li><strong>Salience &amp; Occasion Conditioning:</strong> Coats, tops, bottoms, and full-body dresses/jumpsuits carry `1.0` weight (`0.85` shoes, `0.35` accessories). Past logs from the same occasion carry `1.0×` weight vs. `0.65×` cross-occasion soft transfer.</li>
+          <li><strong>Centered FashionCLIP &amp; Formality Conditioning:</strong> Single-item 512-D vectors are centered against your closet mean before outfit/pair kernels, removing narrow-cone bias. Formality (1–5) uses smooth distance decay (`1.0×` exact match, `−0.14` per step, floor `0.55×`), and Comfort is tracked separately from Style.</li>
           <li><strong>Culprit Isolation &amp; Aesthetic Recency (`W`):</strong> Tagging clashing pieces isolates negative pair rows, while optional exponential decay (`Off / 90d / 60d / 30d`) lets your style evolve over time.</li>
         </ul>
       </article>
@@ -1052,7 +1054,7 @@
       <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2.5">
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex-1 min-w-[200px]">
-            <label for="fPhoto" class="block text-xs font-semibold text-indigo-950 mb-1">Garment Photo (Analyzed Locally by CLIP-ViT-B/32)</label>
+            <label for="fPhoto" class="block text-xs font-semibold text-indigo-950 mb-1">Garment Photo (Analyzed Locally by Marqo-FashionCLIP)</label>
             <input type="file" id="fPhoto" accept="image/*" class="block w-full text-xs text-slate-700 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-700 file:text-white hover:file:bg-indigo-800">
             <p class="text-[11px] text-indigo-900/80 mt-1">Auto-runs <strong>RMBG-1.4</strong> neural background removal first, then embeds the clean garment in <strong>512-D CLIP</strong>.</p>
             <div class="flex flex-wrap items-center gap-2 mt-1.5">
@@ -1293,12 +1295,13 @@
             </select>
           </div>
           <div>
-            <label for="rOccasion" class="block text-[10px] font-semibold text-blue-950 mb-0.5">Occasion</label>
+            <label for="rOccasion" class="block text-[10px] font-semibold text-blue-950 mb-0.5">Formality (1–5)</label>
             <select id="rOccasion" class="w-full px-2 py-1 rounded-md border border-blue-200 bg-white text-xs">
-              <option value="casual">Everyday Casual</option>
-              <option value="work">Work / Smart</option>
-              <option value="dinner">Dinner / Out</option>
-              <option value="travel">Travel / Walk</option>
+              <option value="1">1 · Lounge / Active</option>
+              <option value="2" selected>2 · Casual</option>
+              <option value="3">3 · Smart Casual</option>
+              <option value="4">4 · Tailored / Office</option>
+              <option value="5">5 · Formal / Black-Tie</option>
             </select>
           </div>
         </div>
@@ -1367,8 +1370,10 @@
 <script>
 (function() {
   const STORAGE_KEY = 'atelier_index_closet_v2';
-  const CLIP_MODEL_ID = 'Xenova/clip-vit-base-patch32';
+  const CLIP_MODEL_ID = 'Marqo/marqo-fashionCLIP';
+  const CLIP_FALLBACK_MODEL_ID = 'Xenova/clip-vit-base-patch32';
   const RMBG_MODEL_ID = 'briaai/RMBG-1.4';
+  const TRANSFORMERS_CLIP_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
   const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
 
   // ---------- REAL IN-BROWSER CLIP ENGINE (512-D IMAGE + ZERO-SHOT ATTRIBUTES) ----------
@@ -1496,39 +1501,64 @@
 
     clipEngine.loadingPromise = (async () => {
       try {
-        updateClipUI('loading', 'Loading CLIP-ViT-B/32...');
-        if (onProgress) onProgress('Importing Transformers.js & downloading CLIP-ViT-B/32 (~90MB cached once)...');
-        const transformers = await import(TRANSFORMERS_CDN);
-        transformers.env.allowLocalModels = false;
-        transformers.env.useBrowserCache = true;
+        updateClipUI('loading', 'Loading FashionCLIP...');
+        if (onProgress) onProgress('Importing Transformers.js & downloading Marqo-FashionCLIP (cached once)...');
 
-        const progressCb = info => {
+        let loadedModelId = CLIP_MODEL_ID;
+        let transformers, processor, tokenizer, visionModel, textModel;
+
+        const makeProgressCb = label => info => {
           if (info && info.status === 'progress' && typeof info.progress === 'number') {
             const pct = Math.round(info.progress);
-            updateClipUI('loading', `Loading CLIP ${pct}%`);
-            if (onProgress) onProgress(`Downloading CLIP-ViT-B/32 weights: ${pct}% (${info.file || 'onnx'})`);
+            updateClipUI('loading', `Loading ${label} ${pct}%`);
+            if (onProgress) onProgress(`Downloading ${label} weights: ${pct}% (${info.file || 'onnx'})`);
           }
         };
 
-        const [processor, tokenizer, visionModel, textModel] = await Promise.all([
-          transformers.AutoProcessor.from_pretrained(CLIP_MODEL_ID),
-          transformers.AutoTokenizer.from_pretrained(CLIP_MODEL_ID),
-          transformers.CLIPVisionModelWithProjection.from_pretrained(CLIP_MODEL_ID, { quantized: true, progress_callback: progressCb }),
-          transformers.CLIPTextModelWithProjection.from_pretrained(CLIP_MODEL_ID, { quantized: true, progress_callback: progressCb })
-        ]);
+        try {
+          transformers = await import(TRANSFORMERS_CLIP_CDN);
+          transformers.env.allowLocalModels = false;
+          transformers.env.useBrowserCache = true;
+          const progressCb = makeProgressCb('FashionCLIP');
+          [processor, tokenizer, visionModel, textModel] = await Promise.all([
+            transformers.AutoProcessor.from_pretrained(CLIP_MODEL_ID),
+            transformers.AutoTokenizer.from_pretrained(CLIP_MODEL_ID),
+            transformers.CLIPVisionModelWithProjection.from_pretrained(CLIP_MODEL_ID, { progress_callback: progressCb }),
+            transformers.CLIPTextModelWithProjection.from_pretrained(CLIP_MODEL_ID, { progress_callback: progressCb })
+          ]);
+        } catch (primaryErr) {
+          loadedModelId = CLIP_FALLBACK_MODEL_ID;
+          if (onProgress) onProgress('Falling back to CLIP-ViT-B/32 (~90MB cached once)...');
+          transformers = await import(TRANSFORMERS_CDN);
+          transformers.env.allowLocalModels = false;
+          transformers.env.useBrowserCache = true;
+          const progressCb = makeProgressCb('CLIP');
+          [processor, tokenizer, visionModel, textModel] = await Promise.all([
+            transformers.AutoProcessor.from_pretrained(CLIP_FALLBACK_MODEL_ID),
+            transformers.AutoTokenizer.from_pretrained(CLIP_FALLBACK_MODEL_ID),
+            transformers.CLIPVisionModelWithProjection.from_pretrained(CLIP_FALLBACK_MODEL_ID, { quantized: true, progress_callback: progressCb }),
+            transformers.CLIPTextModelWithProjection.from_pretrained(CLIP_FALLBACK_MODEL_ID, { quantized: true, progress_callback: progressCb })
+          ]);
+        }
 
+        clipEngine.activeModelId = loadedModelId;
         clipEngine.processor = processor;
         clipEngine.tokenizer = tokenizer;
         clipEngine.visionModel = visionModel;
         clipEngine.textModel = textModel;
         clipEngine.RawImage = transformers.RawImage;
 
+        const tokOpts = loadedModelId === CLIP_MODEL_ID
+          ? { padding: 'max_length', truncation: true }
+          : { padding: true, truncation: true };
+        clipEngine.tokOpts = tokOpts;
+
         // Pre-compute 512-D text embeddings for all zero-shot fashion attribute prompts
-        if (onProgress) onProgress('Encoding fashion attribute prompts in 512-D CLIP space...');
+        if (onProgress) onProgress('Encoding fashion attribute prompts in 512-D FashionCLIP space...');
         clipEngine.promptEmbeddings = {};
         for (const axis of Object.keys(CLIP_PROMPTS)) {
           const texts = CLIP_PROMPTS[axis].map(p => p.text);
-          const textInputs = tokenizer(texts, { padding: true, truncation: true });
+          const textInputs = tokenizer(texts, tokOpts);
           const { text_embeds } = await textModel(textInputs);
           const dim = text_embeds.dims[text_embeds.dims.length - 1];
           const vecs = [];
@@ -1539,7 +1569,7 @@
           clipEngine.promptEmbeddings[axis] = vecs;
         }
         const styleTexts = CLIP_STYLE_PROBES.map(p => p.text);
-        const styleInputs = tokenizer(styleTexts, { padding: true, truncation: true });
+        const styleInputs = tokenizer(styleTexts, tokOpts);
         const { text_embeds: styleEmbeds } = await textModel(styleInputs);
         const sDim = styleEmbeds.dims[styleEmbeds.dims.length - 1];
         clipEngine.styleProbeEmbeddings = styleTexts.map((_, i) =>
@@ -1547,14 +1577,14 @@
         );
 
         const cloTexts = CLIP_CLO_PROMPTS.map(p => p.text);
-        const cloInputs = tokenizer(cloTexts, { padding: true, truncation: true });
+        const cloInputs = tokenizer(cloTexts, tokOpts);
         const { text_embeds: cloEmbeds } = await textModel(cloInputs);
         const cDim = cloEmbeds.dims[cloEmbeds.dims.length - 1];
         clipEngine.cloPromptEmbeddings = cloTexts.map((_, i) =>
           l2Normalize(cloEmbeds.data.slice(i * cDim, (i + 1) * cDim))
         );
 
-        updateClipUI('ready', 'CLIP-ViT-B/32 Ready');
+        updateClipUI('ready', loadedModelId === CLIP_MODEL_ID ? 'FashionCLIP Ready' : 'CLIP-ViT-B/32 Ready');
         return clipEngine;
       } catch (err) {
         clipEngine.loadingPromise = null;
@@ -1647,7 +1677,7 @@
     const clean = (text || '').trim();
     if (!clean) return null;
     const eng = await ensureClipLoaded(onProgress);
-    const textInputs = eng.tokenizer([clean], { padding: true, truncation: true });
+    const textInputs = eng.tokenizer([clean], eng.tokOpts || { padding: true, truncation: true });
     const { text_embeds } = await eng.textModel(textInputs);
     return l2Normalize(text_embeds.data);
   }
@@ -1889,10 +1919,10 @@
       { id: 'w2', status: 'wishlist', category: 'shoes', name: 'Weatherproof Espresso Chelsea Boots', brand: 'Blundstone', colorHex: '#3B261D', warmth: 4, formality: 3, silhouette: 'structured', fabric: 'Oiled Waterproof Leather', comfort: 5, rain: 1, price: 215, wears: 0, sizeLabel: 'US 10', measurement: 'Foot 27.8cm', fitFeedback: 'untested', photo: '', clipEmbedding: null, clipInferred: null }
     ],
     outfitLogs: [
-      { id: 'l1', date: '2026-11-12', itemIds: ['i1', 'i3', 'i8', 'i11'], temp: 46, weather: 'clear', occasion: 'work', aesthetic: 5, comfort: 5, thermal: 'right', notes: 'Clean tailored monochrome with soft ivory contrast; effortless all day.' },
-      { id: 'l2', date: '2026-11-15', itemIds: ['i2', 'i5', 'i7', 'i12'], temp: 58, weather: 'clear', occasion: 'casual', aesthetic: 5, comfort: 5, thermal: 'right', notes: 'Relaxed olive jacket over slate tee works every weekend.' },
-      { id: 'l3', date: '2026-11-18', itemIds: ['i4', 'i8', 'i11'], temp: 68, weather: 'clear', occasion: 'dinner', aesthetic: 4, comfort: 4, thermal: 'right', notes: 'Sharp proportions for dinner; loafers felt great.' },
-      { id: 'l4', date: '2026-11-19', itemIds: ['i1', 'i6', 'i7', 'i11'], temp: 44, weather: 'windy', occasion: 'casual', aesthetic: 2, comfort: 1, thermal: 'hot', notes: 'Acrylic sweater was itchy and overheated indoors under the wool coat.' }
+      { id: 'l1', date: '2026-11-12', itemIds: ['i1', 'i3', 'i8', 'i11'], temp: 46, weather: 'clear', occasion: '4', aesthetic: 5, comfort: 5, thermal: 'right', notes: 'Clean tailored monochrome with soft ivory contrast; effortless all day.' },
+      { id: 'l2', date: '2026-11-15', itemIds: ['i2', 'i5', 'i7', 'i12'], temp: 58, weather: 'clear', occasion: '2', aesthetic: 5, comfort: 5, thermal: 'right', notes: 'Relaxed olive jacket over slate tee works every weekend.' },
+      { id: 'l3', date: '2026-11-18', itemIds: ['i4', 'i8', 'i11'], temp: 68, weather: 'clear', occasion: '4', aesthetic: 4, comfort: 4, thermal: 'right', notes: 'Sharp proportions for dinner; loafers felt great.' },
+      { id: 'l4', date: '2026-11-19', itemIds: ['i1', 'i6', 'i7', 'i11'], temp: 44, weather: 'windy', occasion: '2', aesthetic: 2, comfort: 1, thermal: 'hot', notes: 'Acrylic sweater was itchy and overheated indoors under the wool coat.' }
     ],
     sizeLogs: []
   };
@@ -2147,13 +2177,48 @@
     return avg;
   }
 
-  function computeOutfitClipEmbedding(items) {
+  // Closet-level 512-D CLIP mean anchor for single-item centering (removes shared "garment photo" cone offset)
+  function computeClosetClipMean() {
+    const vecs = (state.items || [])
+      .filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512)
+      .map(i => i.clipEmbedding);
+    const fMean = (clipEngine.decodeBanks && clipEngine.decodeBanks.fashionMean) ? clipEngine.decodeBanks.fashionMean : null;
+    if (vecs.length < 2) return fMean || null;
+    const mean = new Array(512).fill(0);
+    vecs.forEach(v => { for (let d = 0; d < 512; d++) mean[d] += v[d]; });
+    for (let d = 0; d < 512; d++) mean[d] /= vecs.length;
+    if (vecs.length < 5 && fMean) {
+      const a = vecs.length / 5;
+      for (let d = 0; d < 512; d++) mean[d] = a * mean[d] + (1 - a) * fMean[d];
+    }
+    return mean;
+  }
+
+  function centerClipVec(vec, meanVec) {
+    if (!Array.isArray(vec) || vec.length !== 512) return null;
+    if (!meanVec) return l2Normalize(vec);
+    const out = new Array(512);
+    let norm2 = 0;
+    for (let d = 0; d < 512; d++) {
+      const diff = vec[d] - meanVec[d];
+      out[d] = diff;
+      norm2 += diff * diff;
+    }
+    if (norm2 < 1e-8) return l2Normalize(vec);
+    const inv = 1 / Math.sqrt(norm2);
+    for (let d = 0; d < 512; d++) out[d] *= inv;
+    return out;
+  }
+
+  function computeOutfitClipEmbedding(items, meanVec) {
     const clipItems = items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512);
     if (!clipItems.length) return null;
+    const anchor = meanVec === undefined ? computeClosetClipMean() : meanVec;
     const avg = new Array(512).fill(0);
     clipItems.forEach(it => {
       const w = itemSalience(it);
-      for (let i = 0; i < 512; i++) avg[i] += it.clipEmbedding[i] * w;
+      const cv = centerClipVec(it.clipEmbedding, anchor);
+      for (let i = 0; i < 512; i++) avg[i] += cv[i] * w;
     });
     return l2Normalize(avg);
   }
@@ -2263,8 +2328,9 @@
     return Math.max(0.15, Math.pow(0.5, ageDays / hl));
   }
 
-  // Build full 512-D liked vs. disliked taste centroids + culprit-aware pairwise bank
+  // Build centered 512-D liked vs. disliked taste centroids + culprit-aware pairwise bank (pure aesthetic)
   function buildClipPreferenceSpace() {
+    const closetMean = computeClosetClipMean();
     const likedSum = new Array(512).fill(0);
     const dislikedSum = new Array(512).fill(0);
     let likedW = 0, dislikedW = 0;
@@ -2274,24 +2340,26 @@
       const logItems = log.itemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
       const clipItems = logItems.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512);
       if (!clipItems.length) return;
-      const rating01 = Math.max(0, Math.min(1, (log.aesthetic * 0.6 + log.comfort * 0.4 - 1) / 4));
+      const rating01 = Math.max(0, Math.min(1, (log.aesthetic - 1) / 4));
       const recencyW = getLogRecencyWeight(log.date);
       const culprits = new Set(Array.isArray(log.culpritIds) ? log.culpritIds : []);
       const hasCulprits = culprits.size > 0;
+      const centeredVecs = clipItems.map(it => centerClipVec(it.clipEmbedding, closetMean));
 
-      clipItems.forEach(it => {
+      clipItems.forEach((it, idx) => {
         const sal = itemSalience(it);
+        const cv = centeredVecs[idx];
         if (hasCulprits && culprits.has(it.id)) {
           const w = 0.85 * sal * recencyW;
-          for (let i = 0; i < 512; i++) dislikedSum[i] += it.clipEmbedding[i] * w;
+          for (let i = 0; i < 512; i++) dislikedSum[i] += cv[i] * w;
           dislikedW += w;
         } else if (rating01 >= 0.65) {
           const w = rating01 * sal * recencyW;
-          for (let i = 0; i < 512; i++) likedSum[i] += it.clipEmbedding[i] * w;
+          for (let i = 0; i < 512; i++) likedSum[i] += cv[i] * w;
           likedW += w;
         } else if (!hasCulprits && rating01 <= 0.4) {
           const w = (1 - rating01) * sal * recencyW;
-          for (let i = 0; i < 512; i++) dislikedSum[i] += it.clipEmbedding[i] * w;
+          for (let i = 0; i < 512; i++) dislikedSum[i] += cv[i] * w;
           dislikedW += w;
         }
       });
@@ -2302,7 +2370,7 @@
           if (hasCulprits && !involvesCulprit && rating01 < 0.6) continue; // Spare innocent pairs
           const pairRating = involvesCulprit ? Math.min(rating01, 0.2) : rating01;
           pairBank.push({
-            vec: hadamard512(clipItems[a].clipEmbedding, clipItems[b].clipEmbedding),
+            vec: hadamard512(centeredVecs[a], centeredVecs[b]),
             fitSig: computePairFitSignature(clipItems[a], clipItems[b]),
             rating01: pairRating,
             recencyW
@@ -2316,12 +2384,14 @@
     state.items.forEach(it => {
       if (it.status === 'owned' && Array.isArray(it.clipEmbedding) && it.clipEmbedding.length === 512) {
         const sal = itemSalience(it);
-        for (let i = 0; i < 512; i++) closetSum[i] += it.clipEmbedding[i] * sal;
+        const cv = centerClipVec(it.clipEmbedding, closetMean);
+        for (let i = 0; i < 512; i++) closetSum[i] += cv[i] * sal;
         closetCnt += sal;
       }
     });
 
     return {
+      closetMean,
       likedCentroid: likedW > 0 ? l2Normalize(likedSum) : null,
       dislikedCentroid: dislikedW > 0 ? l2Normalize(dislikedSum) : null,
       closetCentroid: closetCnt > 0 ? l2Normalize(closetSum) : null,
@@ -2533,15 +2603,42 @@
   }
 
   // ---------- WEIGHTED DUAL RIDGE REGRESSION FOR 512-D AESTHETIC & PAIRWISE COMPATIBILITY ----------
-  // Computes salience-weighted 512-D Hadamard interaction vector across all pairs in an outfit (solves A+B good, C+D good, A+D bad)
-  function computeOutfitInteractionVector(items) {
+  const FORMALITY_OCCASION_LABELS = {
+    1: '1 · Lounge / Active',
+    2: '2 · Casual',
+    3: '3 · Smart Casual',
+    4: '4 · Tailored / Office',
+    5: '5 · Formal / Black-Tie'
+  };
+
+  function normalizeOccasionFormality(occ) {
+    if (occ === null || occ === undefined || occ === '') return 2;
+    const n = Number(occ);
+    if (!Number.isNaN(n) && n >= 1 && n <= 5) return Math.round(n);
+    const s = String(occ).toLowerCase().trim();
+    if (s === 'casual' || s === 'travel') return 2;
+    if (s === 'work') return 3;
+    if (s === 'dinner') return 4;
+    if (s === 'formal') return 5;
+    return 2;
+  }
+
+  function formatOccasionLabel(occ) {
+    const f = normalizeOccasionFormality(occ);
+    return FORMALITY_OCCASION_LABELS[f] || `${f} · Casual`;
+  }
+
+  // Computes salience-weighted centered 512-D Hadamard interaction vector across all pairs in an outfit
+  function computeOutfitInteractionVector(items, meanVec) {
     const clipItems = items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512);
     if (clipItems.length < 2) return null;
+    const anchor = meanVec === undefined ? computeClosetClipMean() : meanVec;
+    const cVecs = clipItems.map(it => centerClipVec(it.clipEmbedding, anchor));
     const sum = new Array(512).fill(0);
     for (let a = 0; a < clipItems.length; a++) {
       for (let b = a + 1; b < clipItems.length; b++) {
         const w = Math.sqrt(itemSalience(clipItems[a]) * itemSalience(clipItems[b]));
-        const hv = hadamard512(clipItems[a].clipEmbedding, clipItems[b].clipEmbedding);
+        const hv = hadamard512(cVecs[a], cVecs[b]);
         for (let i = 0; i < 512; i++) sum[i] += hv[i] * w;
       }
     }
@@ -2552,14 +2649,17 @@
     const kPair = (hA && hB) ? Math.max(0, cosineSimilarity(hA, hB)) : 0;
     const kMean = (vA && vB) ? Math.max(0, cosineSimilarity(vA, vB)) : 0;
     const baseSim = (hA && hB) ? (0.60 * kPair + 0.40 * kMean) : kMean;
-    // Condition on occasion: same occasion = 1.0x, different occasion = 0.65x soft transfer
-    const occFactor = (!occA || !occB || occA === occB) ? 1.0 : 0.65;
+    // Smooth formality (1-5) conditioning: exact match = 1.0x, -0.14 per step, floor 0.55x
+    const fA = normalizeOccasionFormality(occA);
+    const fB = normalizeOccasionFormality(occB);
+    const occFactor = Math.max(0.55, 1.0 - Math.abs(fA - fB) * 0.14);
     return baseSim * occFactor;
   }
 
   function collectAestheticSamples() {
     const samples = [];
     const PRIOR_MEAN = 65;
+    const closetMean = computeClosetClipMean();
 
     state.outfitLogs.forEach(log => {
       const logItems = log.itemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
@@ -2568,21 +2668,23 @@
 
       const recencyW = getLogRecencyWeight(log.date);
       const culprits = new Set(Array.isArray(log.culpritIds) ? log.culpritIds : []);
-      const baseRating = ((log.aesthetic * 0.65 + log.comfort * 0.35 - 1) / 4) * 100;
+      // Pure aesthetic target (comfort is tracked separately)
+      const baseRating = ((log.aesthetic - 1) / 4) * 100;
 
-      const logOcc = log.occasion || 'casual';
-      const vMean = computeOutfitClipEmbedding(clipItems);
-      const hPair = computeOutfitInteractionVector(clipItems);
+      const logOcc = normalizeOccasionFormality(log.occasion);
+      const vMean = computeOutfitClipEmbedding(clipItems, closetMean);
+      const hPair = computeOutfitInteractionVector(clipItems, closetMean);
       samples.push({ vMean, hPair, occ: logOcc, residual: baseRating - PRIOR_MEAN, recencyW });
 
       if (culprits.size > 0) {
+        const cVecs = clipItems.map(it => centerClipVec(it.clipEmbedding, closetMean));
         for (let a = 0; a < clipItems.length; a++) {
           for (let b = a + 1; b < clipItems.length; b++) {
             if (culprits.has(clipItems[a].id) || culprits.has(clipItems[b].id)) {
               const pairItems = [clipItems[a], clipItems[b]];
               samples.push({
-                vMean: computeOutfitClipEmbedding(pairItems),
-                hPair: hadamard512(clipItems[a].clipEmbedding, clipItems[b].clipEmbedding),
+                vMean: computeOutfitClipEmbedding(pairItems, closetMean),
+                hPair: hadamard512(cVecs[a], cVecs[b]),
                 occ: logOcc,
                 residual: Math.min(baseRating, 25) - PRIOR_MEAN,
                 recencyW
@@ -2686,11 +2788,7 @@
   }
 
   function occasionTargetFormality(occ) {
-    if (occ === 'casual') return 2.2;
-    if (occ === 'travel') return 2.0;
-    if (occ === 'work') return 3.5;
-    if (occ === 'dinner') return 3.8;
-    return 2.8;
+    return normalizeOccasionFormality(occ);
   }
 
   function evaluateOutfit(items, context, precomputed) {
@@ -2743,53 +2841,56 @@
     const avgComfort = comfortVals.reduce((a, b) => a + b, 0) / comfortVals.length;
     const comfortScore = Math.max(15, (avgComfort / 5) * 100 - (minComfort <= 2 ? 25 : 0));
 
-    // 5. Full 512-D CLIP Scoring (Taste Centroids + Pairwise 512-D Interactions + Outfit k-NN)
-    const outfitStructVec = computeOutfitStructuredEmbedding(items);
-    const outfitClipVec = computeOutfitClipEmbedding(items);
-    const clipItems = items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512);
-    const clipCoverage = clipItems.length / items.length;
+    // 5. Centered 512-D FashionCLIP Scoring (Taste Centroids + Pairwise 512-D Interactions + Outfit k-NN)
     const pref512 = (precomputed && precomputed.pref512) || buildClipPreferenceSpace();
+    const clipMean = pref512.closetMean !== undefined ? pref512.closetMean : computeClosetClipMean();
+    const outfitStructVec = computeOutfitStructuredEmbedding(items);
+    const outfitClipVec = computeOutfitClipEmbedding(items, clipMean);
+    const clipItems = items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512);
+    const centeredClipVecs = clipItems.map(it => centerClipVec(it.clipEmbedding, clipMean));
+    const clipCoverage = clipItems.length / items.length;
 
-    // 5a. Salience-Weighted 512-D Personal Taste Alignment (Absolute Proximity + Liked/Disliked Margin)
+    // 5a. Salience-Weighted Centered 512-D Personal Taste Alignment
     let taste512Score = null;
     const refCentroid = pref512.likedCentroid || pref512.closetCentroid;
     if (clipItems.length && refCentroid) {
       let posSum = 0, marginSum = 0, wSum = 0;
-      clipItems.forEach(it => {
+      clipItems.forEach((it, idx) => {
         const sal = itemSalience(it);
-        const pos = cosineSimilarity(it.clipEmbedding, refCentroid);
-        const neg = pref512.dislikedCentroid ? cosineSimilarity(it.clipEmbedding, pref512.dislikedCentroid) : null;
+        const cv = centeredClipVecs[idx];
+        const pos = cosineSimilarity(cv, refCentroid);
+        const neg = pref512.dislikedCentroid ? cosineSimilarity(cv, pref512.dislikedCentroid) : null;
         posSum += pos * sal;
         if (neg !== null) marginSum += (pos - neg) * sal;
         wSum += sal;
       });
-      const avgPos = wSum > 0 ? posSum / wSum : 0.6;
+      const avgPos = wSum > 0 ? posSum / wSum : 0;
       const avgMargin = (wSum > 0 && pref512.dislikedCentroid) ? (marginSum / wSum) : 0;
-      // Absolute 512-D proximity penalizes out-of-distribution styles (e.g. 0.50 -> ~34, 0.78 -> ~82)
-      const absScore = 34 + (avgPos - 0.50) * 172;
-      taste512Score = Math.round(Math.max(10, Math.min(98, absScore + avgMargin * 60)));
+      const absScore = clipMean ? (62 + avgPos * 62) : (34 + (avgPos - 0.50) * 172);
+      const marginW = clipMean ? 38 : 60;
+      taste512Score = Math.round(Math.max(10, Math.min(98, absScore + avgMargin * marginW)));
     }
 
-    // 5b. 512-D Pairwise Compatibility (Hadamard 512-D pair vectors vs. logged pairs + visual cohesion)
+    // 5b. Centered 512-D Pairwise Compatibility (Hadamard pair vectors vs. logged pairs + visual cohesion)
     let pair512Score = null;
     if (clipItems.length >= 2) {
       let cohesionSum = 0, pairCount = 0;
       let pairPredSum = 0, pairPredW = 0;
       for (let a = 0; a < clipItems.length; a++) {
         for (let b = a + 1; b < clipItems.length; b++) {
-          const directSim = cosineSimilarity(clipItems[a].clipEmbedding, clipItems[b].clipEmbedding);
-          // Sweet spot in CLIP space: coherent style (0.55–0.85) without being identical clones
-          cohesionSum += Math.max(40, Math.min(96, 52 + directSim * 52));
+          const directSim = cosineSimilarity(centeredClipVecs[a], centeredClipVecs[b]);
+          cohesionSum += clipMean
+            ? Math.max(45, Math.min(96, 74 + directSim * 36))
+            : Math.max(40, Math.min(96, 52 + directSim * 52));
           pairCount++;
           if (pref512.pairBank.length) {
-            const hVec = hadamard512(clipItems[a].clipEmbedding, clipItems[b].clipEmbedding);
+            const hVec = hadamard512(centeredClipVecs[a], centeredClipVecs[b]);
             const curFitSig = computePairFitSignature(clipItems[a], clipItems[b]);
             pref512.pairBank.forEach(bp => {
               let pSim = Math.max(0, cosineSimilarity(hVec, bp.vec));
               if (bp.fitSig) {
                 const mf = maskedFitSimilarity(curFitSig, bp.fitSig);
                 if (mf.sim !== null && mf.shared > 0) {
-                  // Weight masked fit/proportion block (~22%) only when both pairs actually have fit dims
                   const fitSim01 = (mf.sim + 1) / 2;
                   pSim = pSim * 0.78 + fitSim01 * 0.22;
                 }
@@ -2805,13 +2906,13 @@
       pair512Score = Math.round(pairPredW > 0.05 ? (pairPredSum / pairPredW) * 0.72 + cohesionAvg * 0.28 : cohesionAvg);
     }
 
-    // 5c. Outfit-Level k-NN Similarity (80% full 512-D CLIP + 20% structured when CLIP present)
+    // 5c. Outfit-Level k-NN Similarity (80% centered 512-D CLIP + 20% structured when CLIP present; pure aesthetic)
     let simWeightedSum = 0, simTotalWeight = 0, maxSim = 0, bestMatchLog = null, usedClipSim = false;
     state.outfitLogs.forEach(log => {
       const logItems = log.itemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
       if (logItems.length < 2) return;
       const structSim = Math.max(0, cosineSimilarity(outfitStructVec, computeOutfitStructuredEmbedding(logItems)));
-      const logClipVec = computeOutfitClipEmbedding(logItems);
+      const logClipVec = computeOutfitClipEmbedding(logItems, clipMean);
       let sim = structSim;
       if (outfitClipVec && logClipVec) {
         const clipSim = Math.max(0, cosineSimilarity(outfitClipVec, logClipVec));
@@ -2819,24 +2920,25 @@
         usedClipSim = true;
       }
       if (sim > maxSim) { maxSim = sim; bestMatchLog = log; }
-      const logRating = ((log.aesthetic * 0.55 + log.comfort * 0.45) / 5) * 100 - ((log.thermal === 'cold' || log.thermal === 'hot') ? 12 : 0);
+      const logRating = ((log.aesthetic - 1) / 4) * 100;
       const weight = Math.pow(sim, 4) * getLogRecencyWeight(log.date);
       simWeightedSum += logRating * weight;
       simTotalWeight += weight;
     });
 
     const knnScore = simTotalWeight > 0.05 ? (simWeightedSum / simTotalWeight) : null;
-    const styleGuardrail = comfortScore * 0.62 + formalityScore * 0.38;
+    // Pure style guardrail: formality coherence only (comfort is kept completely separate from Style)
+    const styleGuardrail = formalityScore;
     const fallbackStyleScore = colorScore * 0.58 + silScore * 0.42;
 
-    // 5d. Weighted Dual Ridge Aesthetic Model (over 512-D Hadamard interactions + outfit mean)
-    const outfitInteractVec = computeOutfitInteractionVector(items);
+    // 5d. Weighted Dual Ridge Aesthetic Model (centered 512-D Hadamard interactions + outfit mean)
+    const outfitInteractVec = computeOutfitInteractionVector(items, clipMean);
     const aesRidgeModel = (precomputed && precomputed.aesRidgeModel) || buildDualRidgeAestheticModel();
     const aesRidge = (outfitClipVec && aesRidgeModel.n > 0)
       ? aesRidgeModel.predict(outfitClipVec, outfitInteractVec, occasion)
       : { score: null, cert: 0 };
 
-    // Weather-independent Style Score (Aesthetic 512-D + Comfort + Formality — never fluctuates with temp/rain)
+    // Pure Style Score (Centered 512-D Aesthetic + Formality — independent of weather & comfort)
     let styleScore;
     if (clipCoverage >= 0.5 && (aesRidge.score !== null || taste512Score !== null || pair512Score !== null)) {
       let clipComposite;
@@ -2857,7 +2959,8 @@
     }
     styleScore = Math.max(10, Math.min(99, styleScore));
     const weatherScore = Math.max(15, Math.min(100, Math.round(thermalScore)));
-    const finalScore = Math.round(styleScore * 0.62 + weatherScore * 0.38);
+    const comfortFinal = Math.max(15, Math.min(100, Math.round(comfortScore)));
+    const finalScore = Math.round(styleScore * 0.50 + weatherScore * 0.30 + comfortFinal * 0.20);
 
     // 6. Certainty (0–100%)
     const avgComp = items.reduce((a, it) => a + itemCompleteness(it), 0) / items.length;
@@ -2898,6 +3001,7 @@
       score: Math.max(10, Math.min(99, finalScore)),
       styleScore,
       weatherScore,
+      comfortScore: comfortFinal,
       idealTemp: T_ideal,
       certainty,
       reasons,
@@ -2996,6 +3100,7 @@
         photo: safePhotoSrc(raw.photo),
         clipEmbedding: clipEmb,
         clipImageEmbedding: clipImgEmb,
+        clipModelId: typeof raw.clipModelId === 'string' ? raw.clipModelId : null,
         clipInferred: (raw.clipInferred && typeof raw.clipInferred === 'object') ? raw.clipInferred : null,
         clipConfidences: (raw.clipConfidences && typeof raw.clipConfidences === 'object') ? raw.clipConfidences : null,
         clipTextNote: typeof raw.clipTextNote === 'string' ? raw.clipTextNote.slice(0, 200) : '',
@@ -3011,7 +3116,7 @@
       itemSnapshots: (l.itemSnapshots && typeof l.itemSnapshots === 'object') ? l.itemSnapshots : {},
       temp: isFinite(Number(l.temp)) ? Math.max(-40, Math.min(130, Number(l.temp))) : 58,
       weather: ['clear', 'windy', 'rain', 'humid', 'indoor'].includes(l.weather) ? l.weather : 'clear',
-      occasion: ['casual', 'work', 'dinner', 'travel'].includes(l.occasion) ? l.occasion : 'casual',
+      occasion: String(normalizeOccasionFormality(l.occasion)),
       aesthetic: Math.max(1, Math.min(5, Number(l.aesthetic) || 4)),
       comfort: Math.max(1, Math.min(5, Number(l.comfort) || 4)),
       thermal: ['unknown', 'cold', 'right', 'hot'].includes(l.thermal) ? l.thermal : 'unknown',
@@ -3105,7 +3210,13 @@
     `;
   }
 
-  function renderSplitBars(styleScore, weatherScore, certainty, weatherLabel = 'Weather') {
+  function renderSplitBars(styleScore, weatherScore, certainty, weatherLabel = 'Weather', comfortScore = null) {
+    const comfortRow = comfortScore !== null && comfortScore !== undefined ? `
+        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
+          <span class="font-semibold text-slate-700">Comfort</span>
+          <div class="meter-track"><div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#059669,#34D399);width:${comfortScore}%"></div></div>
+          <span class="font-bold text-emerald-800 text-right">${comfortScore}</span>
+        </div>` : '';
     return `
       <div class="space-y-1.5">
         <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
@@ -3117,7 +3228,7 @@
           <span class="font-semibold text-slate-700">${escapeHtml(weatherLabel)}</span>
           <div class="meter-track"><div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#0D9488,#14B8A6);width:${weatherScore}%"></div></div>
           <span class="font-bold text-teal-800 text-right">${weatherScore}</span>
-        </div>
+        </div>${comfortRow}
         <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
           <span class="font-semibold text-slate-700">Certainty</span>
           <div class="meter-track"><div class="meter-cert" style="width:${certainty}%"></div></div>
@@ -3225,11 +3336,20 @@
       if (vecA && vecB) return 0.65 * kClo + 0.35 * Math.max(0, cosSim(vecA, vecB));
       return kClo;
     }
+    function normOccF(occ) {
+      const n = Number(occ);
+      if (!Number.isNaN(n) && n >= 1 && n <= 5) return Math.round(n);
+      const s = String(occ || '').toLowerCase();
+      if (s === 'work') return 3;
+      if (s === 'dinner') return 4;
+      if (s === 'formal') return 5;
+      return 2;
+    }
     function aesK(vA, hA, occA, vB, hB, occB) {
       const kPair = (hA && hB) ? Math.max(0, cosSim(hA, hB)) : 0;
       const kMean = (vA && vB) ? Math.max(0, cosSim(vA, vB)) : 0;
       const baseSim = (hA && hB) ? (0.60 * kPair + 0.40 * kMean) : kMean;
-      const occF = (!occA || !occB || occA === occB) ? 1.0 : 0.65;
+      const occF = Math.max(0.55, 1.0 - Math.abs(normOccF(occA) - normOccF(occB)) * 0.14);
       return baseSim * occF;
     }
     function cholDecompFlat(Kflat, n) {
@@ -3431,7 +3551,7 @@
     const owned = state.items.filter(x => x.status === 'owned' && x.id !== item.id);
     const pre = precomputed || makePrecomputedModels();
     const effForm = Number(effAttr(item, 'formality', 3));
-    const occ = effForm >= 4 ? 'work' : 'casual';
+    const occ = String(Math.max(1, Math.min(5, Math.round(effForm))));
     const ctx = { temp: 58, weather: 'clear', occasion: occ };
 
     // Whole-closet season-filtered pairwise style scan across ALL other categories (incl. outerwear & accessories)
@@ -3465,7 +3585,7 @@
     const owned = state.items.filter(x => x.status === 'owned');
     const pre = precomputed || makePrecomputedModels();
     const effForm = Number(effAttr(candidate, 'formality', 3));
-    const occ = effForm >= 4 ? 'work' : 'casual';
+    const occ = String(Math.max(1, Math.min(5, Math.round(effForm))));
     const ctx = { temp: 58, weather: 'clear', occasion: occ };
 
     // Whole-closet season-filtered pairwise style scan across ALL other categories (outerwear, tops, bottoms, shoes, accessories)
@@ -4150,10 +4270,26 @@
       return;
     }
     box.innerHTML = `
-      ${renderDualBars(res.styleScore, res.certainty, 'Style')}
+      <div class="space-y-1.5">
+        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
+          <span class="font-semibold text-slate-700">Style</span>
+          <div class="meter-track"><div class="meter-score" style="width:${res.styleScore}%"></div></div>
+          <span class="font-bold text-blue-800 text-right">${res.styleScore}</span>
+        </div>
+        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
+          <span class="font-semibold text-slate-700">Comfort</span>
+          <div class="meter-track"><div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#059669,#34D399);width:${res.comfortScore ?? res.breakdown.comfort}%"></div></div>
+          <span class="font-bold text-emerald-800 text-right">${res.comfortScore ?? res.breakdown.comfort}</span>
+        </div>
+        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
+          <span class="font-semibold text-slate-700">Certainty</span>
+          <div class="meter-track"><div class="meter-cert" style="width:${res.certainty}%"></div></div>
+          <span class="font-bold text-orange-800 text-right">${res.certainty}%</span>
+        </div>
+      </div>
       <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
         <span class="px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-semibold">Thermal Sweet Spot: ~${res.idealTemp}°F</span>
-        <span class="text-slate-500">Style score stays fixed across weather</span>
+        <span class="text-slate-500">Style is pure aesthetic + formality (comfort &amp; weather separate)</span>
       </div>
       <ul class="space-y-1 text-xs text-slate-600 pt-1">
         ${res.reasons.map(r => `<li class="flex gap-1.5"><span class="text-blue-700 font-bold">&bull;</span><span>${escapeHtml(r)}</span></li>`).join('')}
@@ -4308,6 +4444,7 @@
       score: Math.max(10, Math.min(99, combinedScore)),
       styleScore: combinedStyle,
       weatherScore: combinedWeather,
+      comfortScore: evLow.comfortScore,
       breakdown: { ...evLow.breakdown, thermal: combinedWeather },
       swingInfo: {
         tLow,
@@ -4584,7 +4721,7 @@
               ? `Full look (~${c.ev.swingInfo.fullIdeal}°F, Style ${c.ev.swingInfo.fullStyle}) &rarr; Take off <strong>${escapeHtml(c.ev.swingInfo.removedNames.join(' + '))}</strong> (~${c.ev.swingInfo.strippedIdeal}°F, Style ${c.ev.swingInfo.strippedStyle})`
               : `No removable layer &mdash; single-state outfit (~${c.ev.swingInfo.fullIdeal}°F)`}
           </div>` : ''}
-          ${renderSplitBars(c.ev.styleScore ?? c.ev.score, c.ev.weatherScore ?? (c.ev.breakdown.thermal || 60), c.ev.certainty, c.ev.swingInfo ? 'Swing' : (ctx.weather === 'indoor' ? 'Indoor' : 'Weather'))}
+          ${renderSplitBars(c.ev.styleScore ?? c.ev.score, c.ev.weatherScore ?? (c.ev.breakdown.thermal || 60), c.ev.certainty, c.ev.swingInfo ? 'Swing' : (ctx.weather === 'indoor' ? 'Indoor' : 'Weather'), c.ev.comfortScore ?? c.ev.breakdown.comfort)}
           <p class="text-xs text-slate-600">${escapeHtml(c.ev.reasons[0] || '')} ${escapeHtml(c.ev.reasons[2] || '')}</p>
         </div>
       `;
@@ -4721,7 +4858,7 @@
     if (eng.decodeBanks) return eng.decodeBanks;
     if (onProgress) onProgress('Encoding 512-D garment decoding banks (types, colors, fabrics)...');
     async function encodeBatch(items) {
-      const inputs = eng.tokenizer(items.map(x => x.text), { padding: true, truncation: true });
+      const inputs = eng.tokenizer(items.map(x => x.text), eng.tokOpts || { padding: true, truncation: true });
       const { text_embeds } = await eng.textModel(inputs);
       const dim = 512;
       const out = [];
@@ -5472,7 +5609,7 @@
 
   function runInspoEvaluation() {
     const temp = Number(document.getElementById('inspoTemp').value) || 56;
-    const occasion = document.getElementById('inspoOccasion').value || 'work';
+    const occasion = document.getElementById('inspoOccasion').value || '3';
     const owned = state.items.filter(i => i.status === 'owned');
 
     const clipOwned = owned.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512);
@@ -5619,7 +5756,7 @@
       return `
         <article class="bg-white rounded-xl border ${worked ? 'border-emerald-200' : 'border-rose-200'} p-4 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-xs font-bold text-slate-900">${escapeHtml(log.date)} · ${log.temp}°F ${escapeHtml(log.weather)} · ${escapeHtml(log.occasion)} <span class="font-medium text-indigo-700 ml-1">(${Math.round(getLogRecencyWeight(log.date) * 100)}% wt)</span></span>
+            <span class="text-xs font-bold text-slate-900">${escapeHtml(log.date)} · ${log.temp}°F ${escapeHtml(log.weather)} · ${escapeHtml(formatOccasionLabel(log.occasion))} <span class="font-medium text-indigo-700 ml-1">(${Math.round(getLogRecencyWeight(log.date) * 100)}% wt)</span></span>
             <div class="flex items-center gap-1.5">
               <button type="button" data-edit-log="${log.id}" class="edit-log-btn px-2 py-0.5 rounded-md border border-slate-300 hover:bg-slate-50 text-[10px] font-semibold text-slate-700">Edit</button>
               <button type="button" data-del-log="${log.id}" class="del-log-btn px-2 py-0.5 rounded-md border border-rose-200 hover:bg-rose-50 text-[10px] font-semibold text-rose-700">Delete</button>
@@ -6168,7 +6305,7 @@
     setRateEnvMode(initW === 'indoor' ? 'indoor' : 'outdoor', false);
     document.getElementById('rTemp').value = editLog ? editLog.temp : ctx.temp;
     document.getElementById('rWeather').value = initW === 'indoor' ? 'clear' : (initW || 'clear');
-    document.getElementById('rOccasion').value = editLog ? (editLog.occasion || 'casual') : (ctx.occasion || 'casual');
+    document.getElementById('rOccasion').value = String(normalizeOccasionFormality(editLog ? editLog.occasion : ctx.occasion));
     const rws = document.getElementById('rWeatherStatus');
     rws.classList.add('hidden');
     rws.textContent = '';
@@ -6366,6 +6503,7 @@
       photo: pendingPhotoDataUrl || (existing ? existing.photo : ''),
       clipEmbedding: clipEmb,
       clipImageEmbedding: clipImgEmb,
+      clipModelId: (pendingClipResult || (clipEngine.status === 'ready' && clipEmb)) ? (clipEngine.activeModelId || CLIP_MODEL_ID) : (keepOldClip ? (existing.clipModelId || null) : null),
       clipInferred: clipInf,
       clipConfidences: clipConf,
       clipTextNote,
@@ -7303,7 +7441,7 @@
       const it = state.items.find(x => x.id === id);
       if (it) itemSnapshots[id] = { name: it.name, colorHex: safeHex(it.colorHex), category: it.category };
     });
-    const occVal = document.getElementById('rOccasion').value || pendingRateOutfit.ctx.occasion || 'casual';
+    const occVal = String(normalizeOccasionFormality(document.getElementById('rOccasion').value || pendingRateOutfit.ctx.occasion));
     const aesVal = Number(document.getElementById('rAesthetic').value);
     const comfVal = Number(document.getElementById('rComfort').value);
     const thermVal = document.getElementById('rThermal').value;
@@ -7874,7 +8012,8 @@
         const it = targets[idx];
         btn.textContent = `Updating ${idx + 1}/${targets.length}...`;
         const w = (it.clipTextWeight ?? 35) / 100;
-        const hasCachedImg = Array.isArray(it.clipImageEmbedding) && it.clipImageEmbedding.length === 512;
+        const activeModel = eng.activeModelId || CLIP_MODEL_ID;
+        const hasCachedImg = Array.isArray(it.clipImageEmbedding) && it.clipImageEmbedding.length === 512 && it.clipModelId === activeModel;
         const rawNote = (it.clipTextNote || '').trim();
         const vecNudge = buildAttributeNudgeText(it, !it.photo && !hasCachedImg);
 
@@ -7882,6 +8021,7 @@
           const res = await analyzeImageWithClip(it.photo, null, rawNote, w, vecNudge);
           it.clipEmbedding = res.embedding512;
           it.clipImageEmbedding = res.imageEmbedding512;
+          it.clipModelId = activeModel;
           it.clipInferred = res.inferred;
           it.clipConfidences = res.confidences;
           it.clipNudgeText = vecNudge;
@@ -7893,6 +8033,7 @@
           const blended = blendEmbeddings512(it.clipImageEmbedding, fullTxtVec, vecNudge ? w : 0);
           const meta = inferAttributesFromEmbedding(eng, analysisVec || blended);
           it.clipEmbedding = blended;
+          it.clipModelId = activeModel;
           it.clipInferred = meta.inferred;
           it.clipConfidences = meta.confidences;
           it.clipNudgeText = vecNudge;
@@ -7902,6 +8043,7 @@
           const meta = inferAttributesFromEmbedding(eng, txtVec);
           it.clipEmbedding = txtVec;
           it.clipImageEmbedding = null;
+          it.clipModelId = activeModel;
           it.clipInferred = meta.inferred;
           it.clipConfidences = meta.confidences;
           it.clipNudgeText = vecNudge;
