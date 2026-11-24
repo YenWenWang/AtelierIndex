@@ -535,17 +535,15 @@
     <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-4">
       <div>
         <h2 class="text-base font-bold text-slate-900">Strategic Closet Gap Analysis</h2>
-        <p class="text-xs text-slate-600 mt-1 max-w-2xl">Scans your whole closet pairwise (season-filtered across all 5 categories, discounting redundant duplicates). Click <strong>Synthesize 25 Orthogonal Gaps</strong> to optimize 25 mutually perpendicular 512-D CLIP vectors and decode them into tailored garment recipes.</p>
+        <p class="text-xs text-slate-600 mt-1 max-w-2xl">Automatically scans your whole closet pairwise (season-filtered across all categories) and synthesizes 25 mutually orthogonal 512-D CLIP wardrobe gaps using your Dual Ridge outfit-log model.</p>
       </div>
       <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <span class="text-[11px] font-semibold text-slate-500">Certainty Mode</span>
         <div id="gapCertModeBar" class="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5 text-xs font-semibold" title="Dual Ridge certainty trade-off using all outfit logs">
           <button type="button" data-gcert="safe" class="gcert-btn px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">Safe</button>
           <button type="button" data-gcert="balanced" class="gcert-btn px-2.5 py-1 rounded-md bg-white text-slate-900 shadow-sm transition">Balanced</button>
           <button type="button" data-gcert="explore" class="gcert-btn px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">Explore</button>
         </div>
-        <button type="button" id="btnSynthesizeGaps" class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition">
-          Synthesize 25 Orthogonal Gaps (512-D)
-        </button>
       </div>
     </div>
 
@@ -4346,6 +4344,55 @@
   let gapCatFilter = 'all';
   let gapSortMode = 'overall';
   let gapCertMode = 'balanced'; // 'safe' | 'balanced' | 'explore'
+  let lastGapSynthKey = '';
+  let gapSynthInFlight = false;
+  let gapSynthQueued = false;
+  let gapSynthError = '';
+
+  function computeGapSynthKey() {
+    const ownedSig = state.items
+      .filter(i => i.status === 'owned')
+      .map(i => `${i.id}:${i.category}:${Array.isArray(i.clipEmbedding) ? Math.round((i.clipEmbedding[0] || 0) * 1000) : 0}`)
+      .join('|');
+    const logSig = state.outfitLogs
+      .map(l => `${l.id}:${l.aesthetic}:${l.comfort}:${l.date}`)
+      .join('|');
+    return `${gapCertMode}::${(state.settings && state.settings.recencyHalfLife) || 60}::${ownedSig}::${logSig}`;
+  }
+
+  async function maybeAutoSynthesizeGaps(force = false) {
+    if (gapSynthInFlight) {
+      if (force) gapSynthQueued = true;
+      return;
+    }
+    const key = computeGapSynthKey();
+    if (!force && synthesizedGaps.length > 0 && key === lastGapSynthKey) return;
+    gapSynthInFlight = true;
+    gapSynthError = '';
+    const statusEl = document.getElementById('gapSynthStatus');
+    if (statusEl) {
+      statusEl.classList.remove('hidden');
+      statusEl.textContent = synthesizedGaps.length
+        ? `Updating 25 orthogonal 512-D gaps (${gapCertMode} mode)...`
+        : 'Initializing CLIP-ViT-B/32 & synthesizing 25 orthogonal 512-D gaps...';
+    }
+    try {
+      await synthesizeOrthogonalGaps(msg => { if (statusEl) statusEl.textContent = msg; });
+      lastGapSynthKey = computeGapSynthKey();
+      if (statusEl) statusEl.classList.add('hidden');
+      if (currentTab === 'gaps') renderGapView();
+    } catch (err) {
+      gapSynthError = 'Could not load CLIP right now—check internet access to HuggingFace/jsDelivr.';
+      if (statusEl) statusEl.classList.add('hidden');
+      if (currentTab === 'gaps') renderGapView();
+    } finally {
+      gapSynthInFlight = false;
+      if (gapSynthQueued) {
+        gapSynthQueued = false;
+        maybeAutoSynthesizeGaps(true);
+      }
+    }
+  }
 
   async function ensureDecodeBanksLoaded(eng, onProgress) {
     if (eng.decodeBanks) return eng.decodeBanks;
@@ -4594,6 +4641,24 @@
     };
 
     if (onProgress) onProgress('Decoding 25 orthogonal vectors into concrete garment recipes & scoring...');
+    // Precompute Dual Ridge (mu, sigma) for each color, fabric, and silhouette bank vector
+    const decodeBeta = gapCertMode === 'safe' ? -0.12 : gapCertMode === 'explore' ? 0.15 : 0.0;
+    function evalBankRidge(vec) {
+      if (ridge.n === 0) return { mu: 0, sigma: 0 };
+      const kVec = ridge.samples.map(s => Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vec, s.vMean))));
+      let delta = 0;
+      for (let i = 0; i < ridge.n; i++) delta += ridge.alpha[i] * kVec[i];
+      const muNorm = Math.max(-1, Math.min(1, delta / 35));
+      const uVec = solveLinearSystem(ridge.K, kVec);
+      let explained = 0;
+      for (let i = 0; i < ridge.n; i++) explained += kVec[i] * uVec[i];
+      const sigma = Math.sqrt(Math.max(0.05, 1 - Math.max(0, Math.min(0.999, explained))));
+      return { mu: muNorm, sigma };
+    }
+    const colorRidge = banks.colorVecs.map(evalBankRidge);
+    const fabRidge = banks.fabricVecs.map(evalBankRidge);
+    const silRidge = banks.silVecs.map(evalBankRidge);
+
     const usedTypes = {};
     const usedColors = {};
     const usedFabrics = {};
@@ -4602,7 +4667,7 @@
     for (let k = 0; k < optVecs.length; k++) {
       const vStar = optVecs[k].vec;
       const isTasteExplorer = optVecs[k].isTasteExplorer;
-      // Decode garment type, color, fabric, silhouette via CLIP bank cosine similarity (with light anti-collapse)
+      // Decode garment type, color, fabric, silhouette using cos(v*, c) + 0.10*mu(c) + beta*sigma(c)
       let bestTypeIdx = 0, bestTypeScore = -99;
       for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
         const s = cosineSimilarity(vStar, banks.typeVecs[i]) - (usedTypes[i] || 0) * 0.08;
@@ -4613,7 +4678,8 @@
 
       let bestColorIdx = 0, bestColorScore = -99;
       for (let i = 0; i < CLIP_DECODE_COLORS.length; i++) {
-        const s = cosineSimilarity(vStar, banks.colorVecs[i]) - (usedColors[i] || 0) * 0.025;
+        const acq = ridge.n > 0 ? (0.10 * colorRidge[i].mu + decodeBeta * colorRidge[i].sigma) : 0;
+        const s = cosineSimilarity(vStar, banks.colorVecs[i]) + acq - (usedColors[i] || 0) * 0.025;
         if (s > bestColorScore) { bestColorScore = s; bestColorIdx = i; }
       }
       usedColors[bestColorIdx] = (usedColors[bestColorIdx] || 0) + 1;
@@ -4621,7 +4687,8 @@
 
       let bestFabIdx = 0, bestFabScore = -99;
       for (let i = 0; i < CLIP_DECODE_FABRICS.length; i++) {
-        const s = cosineSimilarity(vStar, banks.fabricVecs[i]) - (usedFabrics[i] || 0) * 0.025;
+        const acq = ridge.n > 0 ? (0.10 * fabRidge[i].mu + decodeBeta * fabRidge[i].sigma) : 0;
+        const s = cosineSimilarity(vStar, banks.fabricVecs[i]) + acq - (usedFabrics[i] || 0) * 0.025;
         if (s > bestFabScore) { bestFabScore = s; bestFabIdx = i; }
       }
       usedFabrics[bestFabIdx] = (usedFabrics[bestFabIdx] || 0) + 1;
@@ -4629,12 +4696,23 @@
 
       let bestSilIdx = 0, bestSilScore = -99;
       for (let i = 0; i < CLIP_DECODE_SILHOUETTES.length; i++) {
-        const s = cosineSimilarity(vStar, banks.silVecs[i]);
+        const acq = ridge.n > 0 ? (0.10 * silRidge[i].mu + decodeBeta * silRidge[i].sigma) : 0;
+        const s = cosineSimilarity(vStar, banks.silVecs[i]) + acq;
         if (s > bestSilScore) { bestSilScore = s; bestSilIdx = i; }
       }
       const gSil = CLIP_DECODE_SILHOUETTES[bestSilIdx];
 
-      const meta = inferAttributesFromEmbedding(eng, vStar);
+      // Lightly align final embedding with decoded color/fabric/silhouette so card scores reflect the chosen recipe
+      const decodedVec = new Array(512);
+      const cv = banks.colorVecs[bestColorIdx];
+      const fv = banks.fabricVecs[bestFabIdx];
+      const sv = banks.silVecs[bestSilIdx];
+      for (let d = 0; d < 512; d++) {
+        decodedVec[d] = 0.82 * vStar[d] + 0.07 * cv[d] + 0.06 * fv[d] + 0.05 * sv[d];
+      }
+      const finalVec = l2Normalize(decodedVec);
+
+      const meta = inferAttributesFromEmbedding(eng, finalVec);
       const warmth = gType.defaultWarmth || meta.inferred.warmth || 3;
       const rain = gType.defaultRain || (gFab.label.includes('Waterproof') ? 1 : (meta.inferred.rain || 0));
       const formality = meta.inferred.formality || 3;
@@ -4654,10 +4732,10 @@
         rain,
         price: 0,
         seasons,
-        clipEmbedding: vStar,
+        clipEmbedding: finalVec,
         clipInferred: meta.inferred,
         isTasteExplorer,
-        why: `Decoded from orthogonal 512-D vector #${k + 1}${isTasteExplorer ? ' (Taste Explorer)' : ''} · ${gFab.label} · Warmth ${warmth}/5 · Formality ${formality}/5.`
+        why: `Decoded from orthogonal 512-D vector #${k + 1}${isTasteExplorer ? ' (Explore)' : ''} · ${gFab.label} · Warmth ${warmth}/5 · Formality ${formality}/5.`
       });
     }
 
@@ -4729,19 +4807,30 @@
     filterBar.classList.toggle('hidden', !isSynth);
     if (isSynth && gapOrthoStats) {
       orthoBadge.classList.remove('hidden');
-      const mLbl = gapOrthoStats.mode === 'safe' ? 'Safe (High Cert)' : gapOrthoStats.mode === 'explore' ? 'Explore (Blind Spots)' : 'Balanced';
-      orthoBadge.textContent = `${gapOrthoStats.count} Gaps · ${mLbl} · ∥ Taste (${gapOrthoStats.tasteDim}D) · ⊥ Owned (${gapOrthoStats.avgOwnedCos}) · ⊥ Mutual (${gapOrthoStats.avgAbsCos})`;
+      const mLbl = gapOrthoStats.mode === 'safe' ? 'Safe' : gapOrthoStats.mode === 'explore' ? 'Explore' : 'Balanced';
+      orthoBadge.textContent = mLbl;
     } else {
       orthoBadge.classList.add('hidden');
     }
 
+    if (!gapSynthError) maybeAutoSynthesizeGaps(false);
+
     if (!isSynth) {
-      archEl.innerHTML = `
-        <div class="bg-white rounded-xl border border-dashed border-indigo-300 p-6 text-center space-y-2">
-          <p class="text-xs font-semibold text-slate-800">No 512-D gap vectors synthesized yet.</p>
-          <p class="text-xs text-slate-500 max-w-md mx-auto">Click <strong>Synthesize 25 Orthogonal Gaps (512-D)</strong> above to optimize 25 mutually perpendicular vectors in your closet's taste space and decode them into tailored garment recipes.</p>
-        </div>
-      `;
+      if (gapSynthError) {
+        archEl.innerHTML = `
+          <div class="bg-white rounded-xl border border-rose-200 p-6 text-center space-y-2.5">
+            <p class="text-xs font-semibold text-rose-800">${escapeHtml(gapSynthError)}</p>
+            <button type="button" id="btnRetryGapSynth" class="px-3.5 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold">Retry 512-D Synthesis</button>
+          </div>
+        `;
+      } else {
+        archEl.innerHTML = `
+          <div class="bg-white rounded-xl border border-dashed border-indigo-300 p-6 text-center space-y-2">
+            <p class="text-xs font-semibold text-indigo-900">Synthesizing 25 orthogonal 512-D gaps automatically...</p>
+            <p class="text-xs text-slate-500 max-w-md mx-auto">Running Dual Ridge certainty optimization (<strong>${escapeHtml(gapCertMode)}</strong> mode) and decoding into concrete garment recipes.</p>
+          </div>
+        `;
+      }
       return;
     }
 
@@ -4754,7 +4843,10 @@
       if (gapSortMode === 'coverage') return ((b.sim.gapTag ? 1 : 0) - (a.sim.gapTag ? 1 : 0)) || (b.sim.effectiveRank - a.sim.effectiveRank);
       if (gapSortMode === 'certainty') return (b.sim.topCertainty - a.sim.topCertainty) || (b.sim.topScore - a.sim.topScore);
       if (gapSortMode === 'uncertainty') return (a.sim.topCertainty - b.sim.topCertainty) || (b.sim.topScore - a.sim.topScore);
-      return (b.sim.effectiveRank - a.sim.effectiveRank) || (b.sim.topScore - a.sim.topScore);
+      const certTilt = gapCertMode === 'safe' ? 0.12 : gapCertMode === 'explore' ? -0.12 : 0;
+      const rankA = a.sim.effectiveRank + certTilt * a.sim.topCertainty;
+      const rankB = b.sim.effectiveRank + certTilt * b.sim.topCertainty;
+      return (rankB - rankA) || (b.sim.topScore - a.sim.topScore);
     });
 
     archEl.innerHTML = evaluated.map(({ arch, sim }, idx) => {
@@ -7507,46 +7599,25 @@
     });
   });
 
-  document.getElementById('gapCertModeBar').addEventListener('click', async e => {
+  document.getElementById('gapCertModeBar').addEventListener('click', e => {
     const btn = e.target.closest('.gcert-btn');
     if (!btn) return;
     gapCertMode = btn.dataset.gcert;
+    gapSynthError = '';
     document.querySelectorAll('.gcert-btn').forEach(b => {
       const active = b === btn;
       b.className = active
         ? 'gcert-btn px-2.5 py-1 rounded-md bg-white text-slate-900 shadow-sm transition'
         : 'gcert-btn px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition';
     });
-    if (synthesizedGaps.length > 0) {
-      const statusEl = document.getElementById('gapSynthStatus');
-      statusEl.classList.remove('hidden');
-      statusEl.textContent = `Re-optimizing 25 gaps in ${gapCertMode} mode...`;
-      try {
-        await synthesizeOrthogonalGaps(msg => { statusEl.textContent = msg; });
-        statusEl.classList.add('hidden');
-        renderGapView();
-        showToast(`Re-synthesized 25 gaps in ${gapCertMode === 'safe' ? 'Safe (High Certainty)' : gapCertMode === 'explore' ? 'Explore (Blind Spots)' : 'Balanced'} mode!`);
-      } catch (err) {
-        statusEl.classList.add('hidden');
-      }
-    }
+    maybeAutoSynthesizeGaps(true);
   });
 
-  document.getElementById('btnSynthesizeGaps').addEventListener('click', async () => {
-    const btn = document.getElementById('btnSynthesizeGaps');
-    const statusEl = document.getElementById('gapSynthStatus');
-    btn.disabled = true;
-    statusEl.classList.remove('hidden');
-    statusEl.textContent = 'Initializing CLIP-ViT-B/32 for 512-D orthogonal gap synthesis...';
-    try {
-      await synthesizeOrthogonalGaps(msg => { statusEl.textContent = msg; });
-      statusEl.classList.add('hidden');
+  document.getElementById('archetypeGapList').addEventListener('click', e => {
+    if (e.target.closest('#btnRetryGapSynth')) {
+      gapSynthError = '';
       renderGapView();
-      showToast('Synthesized & decoded 25 mutually orthogonal 512-D wardrobe gaps!');
-    } catch (err) {
-      statusEl.textContent = 'Could not load CLIP right now—check internet access to HuggingFace/jsDelivr.';
-    } finally {
-      btn.disabled = false;
+      maybeAutoSynthesizeGaps(true);
     }
   });
 
