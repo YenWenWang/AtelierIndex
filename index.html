@@ -637,9 +637,7 @@
             </div>
           </div>
 
-          <button type="button" id="btnRunInspoMatch" class="w-full py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold transition">
-            Match Against My Closet
-          </button>
+
         </div>
 
         <div id="inspoResults" class="lg:col-span-7 space-y-4"></div>
@@ -4522,8 +4520,9 @@
     slotWrap.innerHTML = currentInspoSlots.map((s, idx) => {
       const has512 = Array.isArray(s.clipEmbedding) && s.clipEmbedding.length === 512;
       const tw = s.textWeight != null ? s.textWeight : 40;
+      const isActiveCard = Number(activeSel ? activeSel.value : 0) === idx;
       return `
-      <div class="bg-white p-2.5 rounded-lg border ${has512 ? 'border-indigo-200' : 'border-slate-200'} space-y-2">
+      <div data-slot-card="${idx}" class="bg-white p-2.5 rounded-lg border ${isActiveCard ? 'border-indigo-500 ring-1 ring-indigo-200' : (has512 ? 'border-indigo-200' : 'border-slate-200')} space-y-2 transition">
         <div class="flex items-center gap-2">
           ${s.cropThumb ? `<img src="${s.cropThumb}" alt="Crop" class="w-9 h-9 rounded object-cover border border-slate-200 shrink-0">` : `<input type="color" data-slot="${idx}" class="inspo-color w-7 h-7 rounded cursor-pointer border-0 shrink-0" value="${s.colorHex}">`}
           <div class="flex-1 min-w-0">
@@ -4594,10 +4593,20 @@
       const slotClip = (Array.isArray(slot.clipEmbedding) && slot.clipEmbedding.length === 512)
         ? slot.clipEmbedding
         : (currentInspoClip ? currentInspoClip.embedding512 : null);
-      const usedClip = Boolean(slotClip && clipOwned.length > 0);
+      const sameCatClip = clipOwned.filter(i => i.category === slot.category);
+      const sameCatAll = owned.filter(i => i.category === slot.category);
+      // Match strictly within the slot's category (never match a top to a bottom/shoes!)
+      let usedClip = Boolean(slotClip && sameCatClip.length > 0);
+      let cands = usedClip ? sameCatClip : sameCatAll;
+      // Only if the user owns ZERO pieces in this category, allow top <-> outerwear soft fallback
+      if (!cands.length && (slot.category === 'outerwear' || slot.category === 'top')) {
+        const altCat = slot.category === 'outerwear' ? 'top' : 'outerwear';
+        const altClip = clipOwned.filter(i => i.category === altCat);
+        usedClip = Boolean(slotClip && altClip.length > 0);
+        cands = usedClip ? altClip : owned.filter(i => i.category === altCat);
+      }
       if (usedClip) anyClipMatch = true;
 
-      const cands = usedClip ? clipOwned : owned.filter(i => i.category === slot.category);
       cands.forEach(cand => {
         const sim = usedClip
           ? Math.max(0, cosineSimilarity(slotClip, cand.clipEmbedding))
@@ -6329,11 +6338,39 @@
     }
   });
 
+  function activateInspoSlot(idx) {
+    if (isNaN(idx) || !currentInspoSlots[idx]) return;
+    const sel = document.getElementById('inspoActiveSlot');
+    if (String(sel.value) !== String(idx)) {
+      sel.value = String(idx);
+      document.querySelectorAll('#inspoSlotControls [data-slot-card]').forEach(card => {
+        const on = Number(card.dataset.slotCard) === idx;
+        card.classList.toggle('border-indigo-500', on);
+        card.classList.toggle('ring-1', on);
+        card.classList.toggle('ring-indigo-200', on);
+        if (!on) card.classList.remove('border-indigo-500', 'ring-1', 'ring-indigo-200');
+      });
+      drawInspoCanvas(null);
+    }
+  }
+
+  document.getElementById('inspoSlotControls').addEventListener('focusin', e => {
+    const card = e.target.closest('[data-slot-card]');
+    if (card) activateInspoSlot(Number(card.dataset.slotCard));
+  });
+
+  document.getElementById('inspoSlotControls').addEventListener('mousedown', e => {
+    if (e.target.closest('.inspo-del-slot')) return;
+    const card = e.target.closest('[data-slot-card]');
+    if (card) activateInspoSlot(Number(card.dataset.slotCard));
+  });
+
   document.getElementById('inspoSlotControls').addEventListener('input', e => {
     const idx = Number(e.target.dataset.slot);
     if (isNaN(idx) || !currentInspoSlots[idx]) return;
-    if (e.target.classList.contains('inspo-color')) currentInspoSlots[idx].colorHex = e.target.value;
-    if (e.target.classList.contains('inspo-label')) currentInspoSlots[idx].label = e.target.value;
+    activateInspoSlot(idx);
+    if (e.target.classList.contains('inspo-color')) { currentInspoSlots[idx].colorHex = e.target.value; runInspoEvaluation(); }
+    if (e.target.classList.contains('inspo-label')) { currentInspoSlots[idx].label = e.target.value; runInspoEvaluation(); }
     if (e.target.classList.contains('inspo-nudge-text')) currentInspoSlots[idx].textNote = e.target.value;
     if (e.target.classList.contains('inspo-nudge-weight')) {
       currentInspoSlots[idx].textWeight = Number(e.target.value);
@@ -6396,9 +6433,12 @@
     }
   });
 
-  document.getElementById('btnRunInspoMatch').addEventListener('click', () => {
-    runInspoEvaluation();
-    showToast('Matched inspiration slots against your closet.');
+  ['inspoTemp', 'inspoOccasion'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', runInspoEvaluation);
+      el.addEventListener('change', runInspoEvaluation);
+    }
   });
 
   // Sizing Controls
