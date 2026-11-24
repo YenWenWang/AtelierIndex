@@ -1188,12 +1188,12 @@
       <!-- Stress-Free Wear Frequency & Active Seasons -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
         <div>
-          <label for="fWearFreq" class="block text-xs font-semibold text-slate-700 mb-1">How Often You Wear It (Optional)</label>
+          <label for="fWearFreq" class="block text-xs font-semibold text-slate-700 mb-1">How Often You Wear It — When In Season (Optional)</label>
           <select id="fWearFreq" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-xs bg-white">
             <option value="">Unset (Lowers Certainty)</option>
-            <option value="staple">Heavy Staple (Go-to)</option>
-            <option value="regular">Regularly (Weekly / Monthly)</option>
-            <option value="rare">Rarely / Special Occasion</option>
+            <option value="staple">Heavy Staple (Go-to in its season)</option>
+            <option value="regular">Regularly (Worn regularly in its season)</option>
+            <option value="rare">Rarely / Special Occasion (Even in season)</option>
             <option value="never">Never / Sits Unworn</option>
           </select>
         </div>
@@ -4909,7 +4909,7 @@
     if (valEl) valEl.textContent = `${threshold}%`;
 
     // Usage curve U (distinct protection for Heavy Staple vs Regular!)
-    const usageCurve = { staple: 0.12, regular: 0.32, rare: 0.78, never: 1.0, '': 0.35 };
+    const usageCurve = { staple: 0.12, regular: 0.32, rare: 0.60, never: 0.90, '': 0.35 };
     const freqRank = { staple: 4, regular: 3, rare: 2, never: 1, '': 0 };
 
     // Cluster redundancy curve R(twinCount): 1 twin (2 total) is low for laundry rotation; 2+ twins ramps smoothly
@@ -4952,7 +4952,8 @@
       }
 
       const R = redundancyCurve(twinCount) * (isClusterKeeper ? 0.40 : 1.0);
-      const riskUnderuse = freq ? (U * S) : 0;
+      const rainDamp = (Number(effAttr(it, 'rain', 0)) === 1 && freq !== 'never') ? 0.80 : 1.0;
+      const riskUnderuse = freq ? (U * S * rainDamp) : 0;
       const riskCrowd = R * (0.35 + 0.65 * U) * (0.65 + 0.35 * S);
 
       // Discomfort or orphan curve (season-independent)
