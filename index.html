@@ -169,9 +169,10 @@
   <!-- VIEW 1: CLOSET & FUTURE WISHLIST -->
   <section id="view-closet" class="view-section space-y-5">
     <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <button type="button" id="subOwned" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white">Owned Wardrobe</button>
-        <button type="button" id="subWishlist" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Potential Future Clothes</button>
+        <button type="button" id="subWishlist" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Wishlist</button>
+        <button type="button" id="subTryOn" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">In-Store Try-Ons</button>
         <button type="button" id="subDonated" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Archived / Donated</button>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -526,7 +527,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="space-y-3">
-        <h3 class="text-sm font-bold text-slate-900">Your Potential Future Clothes (Ranked by Closet Unlock Value)</h3>
+        <h3 class="text-sm font-bold text-slate-900">Your Wishlist (Ranked by Closet Unlock Value)</h3>
         <div id="wishlistGapList" class="space-y-3"></div>
       </div>
       <div class="space-y-3">
@@ -566,14 +567,21 @@
         <h2 class="text-base font-bold text-slate-900">Season-Aware Retire &amp; Donate Audit</h2>
         <p class="text-xs text-slate-600 mt-1 max-w-3xl">When an item is rarely worn, the audit checks whether it is simply <strong>out of season</strong> first—instead of pushing you to discard seasonal staples prematurely.</p>
       </div>
-      <div class="flex items-center gap-2">
-        <label for="retireSeasonSelect" class="text-xs font-semibold text-slate-700">Audit Season:</label>
-        <select id="retireSeasonSelect" class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white font-semibold text-slate-800">
-          <option value="spring">Spring</option>
-          <option value="summer">Summer</option>
-          <option value="fall" selected>Fall</option>
-          <option value="winter">Winter</option>
-        </select>
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="flex items-center gap-2">
+          <label for="retireSeasonSelect" class="text-xs font-semibold text-slate-700">Audit Season:</label>
+          <select id="retireSeasonSelect" class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white font-semibold text-slate-800">
+            <option value="spring">Spring</option>
+            <option value="summer">Summer</option>
+            <option value="fall" selected>Fall</option>
+            <option value="winter">Winter</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+          <label for="retireThresholdSlider" class="text-xs font-semibold text-slate-700 whitespace-nowrap">Retire Threshold:</label>
+          <input type="range" id="retireThresholdSlider" min="25" max="85" value="50" class="w-28 accent-rose-600">
+          <span id="retireThresholdVal" class="text-xs font-bold text-rose-700 w-9 text-right">50%</span>
+        </div>
       </div>
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -715,13 +723,50 @@
             </select>
           </div>
           <div class="p-2.5 rounded-lg bg-indigo-50/60 border border-indigo-200 space-y-2">
-            <label for="sizeWishSelect" class="block text-[11px] font-semibold text-indigo-950">Target Style / 512-D CLIP Reference (Optional)</label>
+            <div class="flex items-center justify-between gap-2">
+              <label for="sizeWishSelect" class="text-[11px] font-semibold text-indigo-950">Target Style / 512-D CLIP Reference (Optional)</label>
+              <button type="button" id="btnClearSizeClip" class="hidden text-[10px] font-semibold text-indigo-700 hover:underline">Clear 512-D</button>
+            </div>
             <select id="sizeWishSelect" class="w-full px-2.5 py-1.5 rounded-md border border-indigo-200 bg-white text-xs">
               <option value="">None (Use Category Baseline)</option>
             </select>
+            <div class="flex items-center gap-2">
+              <div id="sizePhotoPreview" class="w-10 h-10 rounded-md border border-indigo-200 bg-white flex items-center justify-center text-[9px] text-slate-400 overflow-hidden shrink-0">Photo</div>
+              <div class="flex-1 min-w-0 space-y-1">
+                <input type="file" id="sizePhotoInput" accept="image/*" class="block w-full text-[10px] text-slate-600 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-700 file:text-white">
+                <label class="inline-flex items-center gap-1 text-[10px] text-indigo-900 cursor-pointer select-none">
+                  <input type="checkbox" id="sizeAutoRmbg" checked class="accent-indigo-700 rounded">
+                  <span>Auto-remove background (RMBG-1.4)</span>
+                </label>
+              </div>
+            </div>
             <div class="flex gap-1.5">
-              <input type="text" id="sizeClipText" placeholder="Or describe style (e.g. boxy cropped wool jacket)" class="flex-1 px-2.5 py-1.5 rounded-md border border-indigo-200 bg-white text-xs">
-              <button type="button" id="btnEmbedSizeClip" class="px-2.5 py-1.5 rounded-md bg-indigo-700 hover:bg-indigo-800 text-white text-[11px] font-semibold shrink-0">Use 512-D</button>
+              <input type="text" id="sizeClipText" placeholder="512-D text nudge (e.g. boxy cropped wool jacket)" class="flex-1 px-2.5 py-1.5 rounded-md border border-indigo-200 bg-white text-xs">
+              <button type="button" id="btnEmbedSizeClip" class="px-2.5 py-1.5 rounded-md bg-indigo-700 hover:bg-indigo-800 text-white text-[11px] font-semibold shrink-0">Apply 512-D</button>
+            </div>
+            <div class="flex items-center gap-2 text-[10px] text-indigo-900">
+              <span>Photo</span>
+              <input type="range" id="sizeClipWeight" min="0" max="100" value="35" class="flex-1 accent-indigo-700">
+              <span id="sizeClipWeightLabel">Text: 35%</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              <input type="text" id="sizeFabric" placeholder="Fabric (opt.)" class="px-2 py-1 rounded border border-indigo-200 bg-white text-[10px]">
+              <select id="sizeWarmth" class="px-1.5 py-1 rounded border border-indigo-200 bg-white text-[10px]">
+                <option value="">Warmth: Auto</option>
+                <option value="1">Warmth 1 · Summer</option><option value="2">Warmth 2 · Light</option><option value="3">Warmth 3 · Mid</option><option value="4">Warmth 4 · Warm</option><option value="5">Warmth 5 · Winter</option>
+              </select>
+              <select id="sizeFormality" class="px-1.5 py-1 rounded border border-indigo-200 bg-white text-[10px]">
+                <option value="">Formality: Auto</option>
+                <option value="1">Formality 1 · Lounge</option><option value="2">Formality 2 · Casual</option><option value="3">Formality 3 · Smart</option><option value="4">Formality 4 · Office</option><option value="5">Formality 5 · Formal</option>
+              </select>
+              <select id="sizeSilhouette" class="px-1.5 py-1 rounded border border-indigo-200 bg-white text-[10px]">
+                <option value="">Silhouette: Auto</option>
+                <option value="fitted">Silhouette: Fitted</option><option value="structured">Silhouette: Structured</option><option value="relaxed">Silhouette: Relaxed</option>
+              </select>
+              <select id="sizeRain" class="px-1.5 py-1 rounded border border-indigo-200 bg-white text-[10px]">
+                <option value="">Rain: Auto</option>
+                <option value="0">Rain: Dry Only</option><option value="1">Rain: Water-Resistant</option>
+              </select>
             </div>
             <p id="sizeClipStatus" class="hidden text-[10px] text-indigo-800 font-medium"></p>
           </div>
@@ -745,53 +790,14 @@
       </div>
 
       <div class="lg:col-span-7 space-y-5">
-        <!-- Try-On & Brand Fit Log (Editable & Deletable) -->
+        <!-- In-Store Try-On Fit Evidence (Synced with Closet → In-Store Try-Ons) -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 class="text-sm font-bold text-slate-900">Try-On Fit Log (Feeds Brand &amp; Size Learning)</h3>
-              <p class="text-xs text-slate-500">Automatically captures In-Store Try-Ons with a size, or log any fitting-room check below. Edit or delete anytime.</p>
+              <h3 class="text-sm font-bold text-slate-900">In-Store Try-On Fit Evidence (Feeds Brand &amp; Size Learning)</h3>
+              <p class="text-xs text-slate-500">Automatically pulls your In-Store Try-Ons that have a size recorded. Edit any try-on here or under <strong>Closet &rarr; In-Store Try-Ons</strong>.</p>
             </div>
           </div>
-          <form id="sizeLogForm" class="grid grid-cols-2 sm:grid-cols-6 gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200 items-end">
-            <input type="hidden" id="slEditId" value="">
-            <div class="col-span-2 sm:col-span-2">
-              <label for="slName" class="block text-[10px] font-semibold text-slate-600 mb-0.5">Piece Name</label>
-              <input type="text" id="slName" required placeholder="e.g. Wool Coat" class="w-full px-2 py-1.5 rounded-md border border-slate-300 bg-white text-xs">
-            </div>
-            <div>
-              <label for="slBrand" class="block text-[10px] font-semibold text-slate-600 mb-0.5">Brand</label>
-              <select id="slBrandSelect" class="brand-sel w-full px-1.5 py-1.5 rounded-md border border-slate-300 bg-white text-xs"></select>
-              <input type="text" id="slBrand" placeholder="New brand..." class="hidden w-full mt-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-xs">
-            </div>
-            <div>
-              <label for="slCat" class="block text-[10px] font-semibold text-slate-600 mb-0.5">Category</label>
-              <select id="slCat" class="w-full px-1.5 py-1.5 rounded-md border border-slate-300 bg-white text-xs">
-                <option value="top">Top</option>
-                <option value="outerwear">Outerwear</option>
-                <option value="bottom">Bottom</option>
-                <option value="fullbody">Full Body</option>
-                <option value="shoes">Shoes</option>
-                <option value="accessory">Accessory</option>
-              </select>
-            </div>
-            <div>
-              <label for="slSize" class="block text-[10px] font-semibold text-slate-600 mb-0.5">Size Tried</label>
-              <input type="text" id="slSize" required placeholder="M / 32 / US 10" class="w-full px-2 py-1.5 rounded-md border border-slate-300 bg-white text-xs">
-            </div>
-            <div>
-              <label for="slFit" class="block text-[10px] font-semibold text-slate-600 mb-0.5">Fit Outcome</label>
-              <select id="slFit" class="w-full px-1.5 py-1.5 rounded-md border border-slate-300 bg-white text-xs">
-                <option value="perfect">Ideal Fit</option>
-                <option value="tight">Too Tight</option>
-                <option value="loose">Too Loose</option>
-              </select>
-            </div>
-            <div class="col-span-2 sm:col-span-6 flex justify-end gap-2">
-              <button type="button" id="btnCancelSizeLogEdit" class="hidden px-2.5 py-1 rounded-md border border-slate-300 text-slate-600 text-xs font-semibold">Cancel</button>
-              <button type="submit" id="btnSaveSizeLog" class="px-3 py-1.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold">+ Log Try-On Fit</button>
-            </div>
-          </form>
           <div id="tryOnSizeLogWrap" class="overflow-x-auto"></div>
         </div>
 
@@ -1058,7 +1064,8 @@
           <label for="fStatus" class="block text-xs font-semibold text-slate-700 mb-1">Save Location</label>
           <select id="fStatus" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white">
             <option value="owned">Owned Wardrobe</option>
-            <option value="wishlist">Potential Future Purchase (Wishlist)</option>
+            <option value="wishlist">Wishlist</option>
+            <option value="tryon">In-Store Try-On</option>
           </select>
         </div>
         <div>
@@ -2895,18 +2902,53 @@
         }
       : { recencyHalfLife: 60, city: 'New York' };
 
-    const cleanSizeLogs = Array.isArray(parsed.sizeLogs) ? parsed.sizeLogs.filter(s => s && typeof s === 'object' && s.sizeLabel).map((s, idx) => ({
-      id: typeof s.id === 'string' && s.id.trim() ? s.id.trim().slice(0, 64) : `sl_${Date.now()}_${idx}`,
-      date: typeof s.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.date) ? s.date : formatLocalDate(),
-      name: typeof s.name === 'string' && s.name.trim() ? s.name.trim().slice(0, 120) : `Try-On ${idx + 1}`,
-      brand: typeof s.brand === 'string' ? s.brand.trim().slice(0, 80) : '',
-      category: validCats.has(s.category) ? s.category : 'top',
-      sizeLabel: String(s.sizeLabel).trim().slice(0, 40),
-      fitFeedback: ['perfect', 'tight', 'loose'].includes(s.fitFeedback) ? s.fitFeedback : 'perfect',
-      clipEmbedding: (Array.isArray(s.clipEmbedding) && s.clipEmbedding.length === 512 && s.clipEmbedding.every(n => typeof n === 'number' && isFinite(n))) ? s.clipEmbedding : null
-    })) : [];
+    const legacySizeLogs = Array.isArray(parsed.sizeLogs) ? parsed.sizeLogs.filter(s => s && typeof s === 'object' && s.sizeLabel) : [];
+    legacySizeLogs.forEach((s, idx) => {
+      const sName = typeof s.name === 'string' && s.name.trim() ? s.name.trim().slice(0, 120) : `Try-On ${idx + 1}`;
+      const sBrand = typeof s.brand === 'string' ? s.brand.trim().slice(0, 80) : '';
+      const sSize = String(s.sizeLabel).trim().slice(0, 40);
+      const alreadyExists = cleanItems.some(it =>
+        it.status === 'tryon' &&
+        (it.name || '').toLowerCase() === sName.toLowerCase() &&
+        (it.brand || '').toLowerCase() === sBrand.toLowerCase() &&
+        (it.sizeLabel || '').toLowerCase() === sSize.toLowerCase()
+      );
+      if (!alreadyExists) {
+        const vec = (Array.isArray(s.clipEmbedding) && s.clipEmbedding.length === 512 && s.clipEmbedding.every(n => typeof n === 'number' && isFinite(n))) ? s.clipEmbedding : null;
+        cleanItems.unshift({
+          id: typeof s.id === 'string' && s.id.trim() ? `try_mig_${s.id.trim().slice(0, 48)}` : `try_mig_${Date.now()}_${idx}`,
+          status: 'tryon',
+          category: validCats.has(s.category) ? s.category : 'top',
+          name: sName,
+          brand: sBrand,
+          colorHex: '#475569',
+          warmth: null,
+          formality: null,
+          silhouette: '',
+          fabric: '',
+          comfort: null,
+          rain: null,
+          price: 0,
+          wearFreq: '',
+          seasons: [],
+          sizeLabel: sSize,
+          measurement: '',
+          fitFeedback: ['perfect', 'tight', 'loose'].includes(s.fitFeedback) ? s.fitFeedback : 'perfect',
+          fitLength: '',
+          fitRise: '',
+          photo: '',
+          clipEmbedding: vec,
+          clipImageEmbedding: vec,
+          clipInferred: null,
+          clipConfidences: null,
+          clipTextNote: '',
+          clipTextWeight: 35,
+          clipNudgeText: ''
+        });
+      }
+    });
 
-    return { items: cleanItems, outfitLogs: cleanLogs, sizeLogs: cleanSizeLogs, settings: cleanSettings };
+    return { items: cleanItems, outfitLogs: cleanLogs, sizeLogs: [], settings: cleanSettings };
   }
 
   let pendingConfirmAction = null;
@@ -2975,6 +3017,7 @@
     let bestTwin = null;
     let bestSim = 0;
     let usedClip = false;
+    const twins = [];
     const wA = Number(effAttr(item, 'warmth', 3));
     const fA = Number(effAttr(item, 'formality', 3));
     const silA = effAttr(item, 'silhouette', 'structured');
@@ -2988,6 +3031,9 @@
       const fB = Number(effAttr(other, 'formality', 3));
       if (Math.abs(wA - wB) > 1 || Math.abs(fA - fB) > 1) return;
 
+      const rgbB = hexToRgb(other.colorHex || '#333333');
+      const cDist = Math.sqrt((rgbA.r - rgbB.r) ** 2 + (rgbA.g - rgbB.g) ** 2 + (rgbA.b - rgbB.b) ** 2) / 441.67;
+
       let sim = 0;
       let clipPair = false;
       const hasClipB = Array.isArray(other.clipEmbedding) && other.clipEmbedding.length === 512;
@@ -2995,13 +3041,16 @@
         sim = Math.max(0, cosineSimilarity(item.clipEmbedding, other.clipEmbedding));
         clipPair = true;
       } else {
-        const rgbB = hexToRgb(other.colorHex || '#333333');
-        const cDist = Math.sqrt((rgbA.r - rgbB.r) ** 2 + (rgbA.g - rgbB.g) ** 2 + (rgbA.b - rgbB.b) ** 2) / 441.67;
         const silB = effAttr(other, 'silhouette', 'structured');
         const silMatch = silA === silB ? 1 : 0.65;
         const rainMatch = Number(effAttr(item, 'rain', 0)) === Number(effAttr(other, 'rain', 0)) ? 1 : 0.7;
         sim = (1 - cDist) * 0.55 + silMatch * 0.25 + rainMatch * 0.20;
       }
+
+      const simPct = Math.round(sim * 100);
+      const qualifiesTwin = clipPair ? (simPct >= 92 && cDist <= 0.32) : (simPct >= 90);
+      if (qualifiesTwin) twins.push({ item: other, simPct });
+
       if (sim > bestSim) {
         bestSim = sim;
         bestTwin = other;
@@ -3009,9 +3058,16 @@
       }
     });
 
+    twins.sort((a, b) => b.simPct - a.simPct);
     const simPct = Math.round(bestSim * 100);
-    const threshold = usedClip ? 85 : 88;
-    return { twin: bestTwin, simPct, isRedundant: Boolean(bestTwin && simPct >= threshold), usedClip };
+    return {
+      twin: twins.length ? twins[0].item : bestTwin,
+      simPct: twins.length ? twins[0].simPct : simPct,
+      twins,
+      twinCount: twins.length,
+      isRedundant: twins.length > 0,
+      usedClip
+    };
   }
 
   function makePrecomputedModels() {
@@ -3144,8 +3200,7 @@
   const BRAND_PAIRS = [
     { sel: 'fBrandSelect', inp: 'fBrand', emptyLabel: 'None / Unbranded' },
     { sel: 'tBrandSelect', inp: 'tBrand', emptyLabel: 'Brand (Optional)' },
-    { sel: 'sizeBrandSelect', inp: 'sizeBrand', emptyLabel: 'Any Brand (All Brands)' },
-    { sel: 'slBrandSelect', inp: 'slBrand', emptyLabel: 'Brand (Optional)' }
+    { sel: 'sizeBrandSelect', inp: 'sizeBrand', emptyLabel: 'Any Brand (All Brands)' }
   ];
 
   function getKnownBrands() {
@@ -3261,9 +3316,13 @@
     const q = (document.getElementById('closetSearch').value || '').toLowerCase();
     const cat = document.getElementById('closetCatFilter').value;
 
-    ['subOwned', 'subWishlist', 'subDonated'].forEach(id => {
+    const tryOnCount = state.items.filter(i => i.status === 'tryon').length;
+    const subTryBtn = document.getElementById('subTryOn');
+    if (subTryBtn) subTryBtn.textContent = tryOnCount ? `In-Store Try-Ons (${tryOnCount})` : 'In-Store Try-Ons';
+
+    ['subOwned', 'subWishlist', 'subTryOn', 'subDonated'].forEach(id => {
       const btn = document.getElementById(id);
-      const target = id === 'subOwned' ? 'owned' : id === 'subWishlist' ? 'wishlist' : 'donated';
+      const target = id === 'subOwned' ? 'owned' : id === 'subWishlist' ? 'wishlist' : id === 'subTryOn' ? 'tryon' : 'donated';
       btn.className = target === closetSubTab
         ? 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white'
         : 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200';
@@ -3278,9 +3337,12 @@
 
     const grid = document.getElementById('closetGrid');
     if (!filtered.length) {
+      const emptyHint = closetSubTab === 'tryon'
+        ? 'Add an <strong>In-Store Try-On</strong> from Live Pairing or Suggestions, or click <strong>+ Add Piece</strong> and choose <strong>In-Store Try-On</strong>.'
+        : 'Click <strong>+ Add Piece</strong> to upload a garment photo (CLIP-ViT-B/32 will auto-embed &amp; infer attributes) or add a Wishlist item.';
       grid.innerHTML = `<div class="col-span-full bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center space-y-2">
         <p class="text-sm font-semibold text-slate-700">No items in this view yet.</p>
-        <p class="text-xs text-slate-500">Click <strong>+ Add Piece</strong> to upload a garment photo (CLIP-ViT-B/32 will auto-embed &amp; infer attributes) or add a future wishlist item.</p>
+        <p class="text-xs text-slate-500">${emptyHint}</p>
       </div>`;
       return;
     }
@@ -3323,6 +3385,7 @@
                 <span class="px-2 py-0.5 rounded ${isInf('silhouette') ? 'bg-indigo-50 text-indigo-800 border border-indigo-200' : 'bg-slate-100'}">${escapeHtml(sVal || 'fit ?')}${isInf('silhouette') ? ' (AI)' : ''}</span>
                 <span class="px-2 py-0.5 rounded bg-slate-100">Comfort ${it.comfort ?? '?'}</span>
                 ${it.status === 'owned' ? `<span class="px-2 py-0.5 rounded ${freq ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-500'}">${freq ? FREQ_LABELS[freq] : 'Freq ?'} · ${seasonTag}</span>` : ''}
+                ${it.status === 'tryon' && it.fitFeedback && it.fitFeedback !== 'untested' ? `<span class="px-2 py-0.5 rounded font-semibold ${it.fitFeedback === 'perfect' ? 'bg-emerald-50 text-emerald-800' : it.fitFeedback === 'tight' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'}">Fit: ${it.fitFeedback === 'perfect' ? 'Ideal' : it.fitFeedback === 'tight' ? 'Too Tight' : 'Too Loose'}</span>` : ''}
               </div>
             </div>
 
@@ -3330,11 +3393,11 @@
 
             ${renderDualBars(ev.score, ev.certainty)}
 
-            <div class="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+            <div class="flex flex-wrap items-center justify-between pt-2 border-t border-slate-100 gap-2">
               <button type="button" data-action="edit" data-id="${it.id}" class="item-act text-xs font-semibold text-slate-700 hover:text-blue-700">Edit</button>
               ${it.status === 'owned' ? `<button type="button" data-action="archive" data-id="${it.id}" class="item-act text-xs font-semibold text-amber-700 hover:text-amber-900">Archive</button>` : ''}
               ${it.status === 'wishlist' ? `<button type="button" data-action="promote" data-id="${it.id}" class="item-act text-xs font-semibold text-emerald-700 hover:text-emerald-900">Bought &rarr; Closet</button>` : ''}
-
+              ${it.status === 'tryon' ? `<button type="button" data-action="toWishlist" data-id="${it.id}" class="item-act text-xs font-semibold text-indigo-700 hover:text-indigo-900">&rarr; Wishlist</button><button type="button" data-action="promote" data-id="${it.id}" class="item-act text-xs font-semibold text-emerald-700 hover:text-emerald-900">&rarr; Closet</button>` : ''}
               ${it.status === 'donated' ? `<button type="button" data-action="restore" data-id="${it.id}" class="item-act text-xs font-semibold text-blue-700">Restore</button>` : ''}
               <button type="button" data-action="delete" data-id="${it.id}" class="item-act text-xs font-medium text-rose-600 hover:text-rose-800">Delete</button>
             </div>
@@ -4653,13 +4716,29 @@
     }).join('');
   }
 
-  // ---------- SEASON-AWARE RETIRE / DONATE ----------
+  // ---------- SEASON-AWARE RETIRE / DONATE (MULTIPLICATIVE RISK CURVES) ----------
   function renderRetireView() {
     const owned = state.items.filter(i => i.status === 'owned');
     const pre = makePrecomputedModels();
     const curSeason = getCurrentAuditSeason();
     const curLabel = curSeason.charAt(0).toUpperCase() + curSeason.slice(1);
+    const sliderEl = document.getElementById('retireThresholdSlider');
+    const threshold = sliderEl ? Number(sliderEl.value) : 50;
+    const valEl = document.getElementById('retireThresholdVal');
+    if (valEl) valEl.textContent = `${threshold}%`;
+
+    // Usage curve U (distinct protection for Heavy Staple vs Regular!)
+    const usageCurve = { staple: 0.12, regular: 0.32, rare: 0.78, never: 1.0, '': 0.35 };
     const freqRank = { staple: 4, regular: 3, rare: 2, never: 1, '': 0 };
+
+    // Cluster redundancy curve R(twinCount): 1 twin (2 total) is low for laundry rotation; 2+ twins ramps smoothly
+    function redundancyCurve(twinCount) {
+      if (twinCount <= 0) return 0;
+      if (twinCount === 1) return 0.20;
+      if (twinCount === 2) return 0.55;
+      if (twinCount === 3) return 0.85;
+      return 0.95;
+    }
 
     const scored = owned.map(it => {
       const ev = evaluateSingleItem(it, pre);
@@ -4675,51 +4754,70 @@
 
     scored.forEach(entry => {
       const { it, ev, freq, sInfo, inSeason } = entry;
-      const poorComfortOrOrphan = (it.comfort !== null && it.comfort <= 2) || (ev.score < 64 && ev.strongPairs === 0 && ev.certainty >= 60);
       const isLowUse = freq === 'never' || freq === 'rare';
+      const U = usageCurve[freq] ?? 0.35;
+      const S = inSeason ? 1.0 : 0.45;
       const red = ev.redundancy;
-      const twin = red && red.isRedundant ? red.twin : null;
-      const twinPreferred = Boolean(twin && (
-        freqRank[getItemWearFreq(twin)] > freqRank[freq] ||
-        ((twin.comfort || 3) > (it.comfort || 3) && freqRank[getItemWearFreq(twin)] >= freqRank[freq])
-      ));
+      const twinCount = red ? (red.twinCount || 0) : 0;
 
-      if (poorComfortOrOrphan) {
-        entry.reason = it.comfort !== null && it.comfort <= 2
-          ? `Rated uncomfortable (${it.comfort}/5) regardless of season.`
-          : `Low pairwise style compatibility (${ev.score}/100, 0 strong season pairs) with high certainty.`;
-        highRetire.push(entry);
-      } else if (!inSeason) {
-        if (isLowUse || !freq) {
-          const nextS = sInfo.list.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' / ');
-          entry.reason = freq
-            ? `Marked "${FREQ_LABELS[freq]}", but it is a ${nextS} piece (${sInfo.inferred ? 'inferred from warmth' : 'tagged'})—re-check in ${nextS}.`
-            : `Out-of-season ${nextS} piece with unset wear frequency—held until ${nextS}.`;
-          seasonalHold.push(entry);
-        }
-      } else if (isLowUse) {
-        const dupNote = twin ? ` Also ~${red.simPct}% similar to ${twin.name}.` : '';
-        if (ev.certainty >= 50) {
-          entry.reason = `Active in ${curLabel} right now, yet marked "${FREQ_LABELS[freq]}" (${ev.strongPairs} strong season pairs).${dupNote}`;
-          highRetire.push(entry);
-        } else {
-          entry.reason = `Marked "${FREQ_LABELS[freq]}" in ${curLabel}, but certainty is still low (${ev.certainty}%).${dupNote}`;
-          testFirst.push(entry);
-        }
-      } else if (twinPreferred) {
-        entry.reason = `Redundant duplicate: ~${red.simPct}% style & season overlap with "${twin.name}", which you wear more or rate more comfortable.`;
-        if (ev.certainty >= 55) highRetire.push(entry);
+      // Protect the #1 keeper in a redundant cluster (highest wear frequency, then comfort, then style)
+      let isClusterKeeper = false;
+      if (twinCount > 0 && red.twins) {
+        const myRank = freqRank[freq] * 100 + (it.comfort || 3) * 10 + (ev.score || 60) * 0.1;
+        const maxTwinRank = Math.max(...red.twins.map(t =>
+          freqRank[getItemWearFreq(t.item)] * 100 + (t.item.comfort || 3) * 10 + 6
+        ));
+        isClusterKeeper = myRank > maxTwinRank;
+      }
+
+      const R = redundancyCurve(twinCount) * (isClusterKeeper ? 0.40 : 1.0);
+      const riskUnderuse = freq ? (U * S) : 0;
+      const riskCrowd = R * (0.35 + 0.65 * U) * (0.65 + 0.35 * S);
+
+      // Discomfort or orphan curve (season-independent)
+      let P = 0;
+      if (it.comfort !== null && it.comfort <= 1) P = 0.95;
+      else if (it.comfort !== null && it.comfort <= 2) P = 0.70;
+      else if (ev.score < 66 && ev.strongPairs === 0 && ev.certainty >= 55) {
+        P = Math.min(0.85, (68 - ev.score) / 35);
+      }
+
+      const retireRisk = Math.round(100 * (1 - (1 - P) * (1 - riskUnderuse) * (1 - riskCrowd)));
+      entry.retireRisk = retireRisk;
+      const nextS = sInfo.list.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' / ');
+
+      const drivers = [];
+      if (it.comfort !== null && it.comfort <= 2) drivers.push(`uncomfortable (${it.comfort}/5)`);
+      else if (P > 0) drivers.push(`low pairwise style (${ev.score}/100, 0 strong pairs)`);
+      if (twinCount > 0 && red.twin) {
+        drivers.push(`${twinCount + 1} similar ${it.category}s in ${nextS} (closest: ${red.twin.name} ~${red.simPct}%)`);
+      }
+      if (isLowUse) drivers.push(`marked "${FREQ_LABELS[freq]}"${inSeason ? ` in ${curLabel}` : ` (out of season: ${nextS})`}`);
+      else if (freq) drivers.push(`marked "${FREQ_LABELS[freq]}"`);
+
+      if (retireRisk >= threshold) {
+        entry.reason = `Retire Risk ${retireRisk}% (≥ ${threshold}%): ${drivers.join(' · ')}.`;
+        if (ev.certainty >= 50) highRetire.push(entry);
         else testFirst.push(entry);
-      } else if (!freq || ev.certainty < 50) {
+      } else if (!inSeason && (isLowUse || !freq)) {
+        entry.reason = freq
+          ? `Retire Risk ${retireRisk}% (< ${threshold}%) — "${FREQ_LABELS[freq]}", but out of season (${nextS}). Re-check in ${nextS}.`
+          : `Out-of-season ${nextS} piece with unset wear frequency—held until ${nextS}.`;
+        seasonalHold.push(entry);
+      } else if (inSeason && (!freq || ev.certainty < 50)) {
         entry.reason = !freq
           ? `Active in ${curLabel}, wear frequency not set yet (${ev.completeness}% profile completeness · ${ev.strongPairs} strong pairs).`
-          : `Low certainty (${ev.certainty}%)—try styling once before judging (${ev.strongPairs} strong pairs).`;
+          : `Low certainty (${ev.certainty}%)—try styling once before judging (Retire Risk ${retireRisk}%).`;
         testFirst.push(entry);
       }
     });
 
+    highRetire.sort((a, b) => b.retireRisk - a.retireRisk);
+    seasonalHold.sort((a, b) => b.retireRisk - a.retireRisk);
+    testFirst.sort((a, b) => b.retireRisk - a.retireRisk);
+
     const highEl = document.getElementById('retireHighList');
-    highEl.innerHTML = highRetire.length ? highRetire.map(({ it, ev, reason }) => `
+    highEl.innerHTML = highRetire.length ? highRetire.map(({ it, ev, retireRisk, reason }) => `
       <div class="bg-white rounded-xl border border-rose-200 p-4 space-y-2.5">
         <div class="flex items-start justify-between gap-2">
           <div>
@@ -4728,12 +4826,12 @@
           </div>
           <button type="button" data-donate="${it.id}" class="donate-btn px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shrink-0">Donate</button>
         </div>
-        ${renderDualBars(ev.score, ev.certainty, 'Style')}
+        ${renderDualBars(retireRisk, ev.certainty, 'Retire Risk')}
       </div>
-    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No retire flags for ${curLabel}—your in-season closet is working well!</div>`;
+    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No items above the ${threshold}% Retire Risk threshold for ${curLabel}—lower the slider to audit more aggressively.</div>`;
 
     const seaEl = document.getElementById('retireSeasonalList');
-    seaEl.innerHTML = seasonalHold.length ? seasonalHold.map(({ it, ev, reason }) => `
+    seaEl.innerHTML = seasonalHold.length ? seasonalHold.map(({ it, ev, retireRisk, reason }) => `
       <div class="bg-white rounded-xl border border-blue-200 p-4 space-y-2.5">
         <div class="flex items-start justify-between gap-2">
           <div>
@@ -4742,12 +4840,12 @@
           </div>
           <button type="button" data-action="edit" data-id="${it.id}" class="item-act px-2.5 py-1 rounded-lg border border-blue-200 text-blue-800 text-[11px] font-semibold shrink-0">Edit</button>
         </div>
-        ${renderDualBars(ev.score, ev.certainty, 'Style')}
+        ${renderDualBars(retireRisk, ev.certainty, 'Retire Risk')}
       </div>
     `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No out-of-season items held right now.</div>`;
 
     const testEl = document.getElementById('retireTestList');
-    testEl.innerHTML = testFirst.length ? testFirst.map(({ it, ev, reason }) => `
+    testEl.innerHTML = testFirst.length ? testFirst.map(({ it, ev, retireRisk, reason }) => `
       <div class="bg-white rounded-xl border border-amber-200 p-4 space-y-2.5">
         <div class="flex items-start justify-between gap-2">
           <div>
@@ -4756,7 +4854,7 @@
           </div>
           <button type="button" data-action="edit" data-id="${it.id}" class="item-act px-2.5 py-1 rounded-lg border border-amber-300 text-amber-900 text-[11px] font-semibold shrink-0">Set Freq</button>
         </div>
-        ${renderDualBars(ev.score, ev.certainty, 'Style')}
+        ${renderDualBars(retireRisk, ev.certainty, 'Retire Risk')}
       </div>
     `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">Every in-season piece has frequency &amp; certainty data!</div>`;
   }
@@ -5064,6 +5162,7 @@
   }
 
   let sizingTargetClipVec = null;
+  let sizingTargetImgVec = null;
   let sizingTargetClipLabel = '';
 
   function renderSizingView() {
@@ -5105,9 +5204,10 @@
       }).join('') : `<span class="text-[11px] text-slate-400">Add owned items to test size pairings.</span>`;
     }
 
+    const tryOnSized = state.items.filter(i => i.status === 'tryon' && i.sizeLabel);
     const allSizeEvidence = [
       ...ownedAll.filter(i => i.sizeLabel).map(i => ({ ...i, source: 'owned' })),
-      ...state.sizeLogs.filter(s => s.sizeLabel).map(s => ({ ...s, source: 'tryon' }))
+      ...tryOnSized.map(s => ({ ...s, source: 'tryon' }))
     ];
     const catEvidence = allSizeEvidence.filter(i => i.category === cat);
     const idealItems = catEvidence.filter(i => i.fitFeedback === 'perfect');
@@ -5174,15 +5274,21 @@
       }
     }
 
+    // CRITICAL: If we already anchored baseSize directly to Ideal Fit pieces from this EXACT brand + category
+    // (e.g., two Ideal Fit Lululemon S pieces), baseSize ALREADY reflects the brand's cut — do NOT shift it a second time!
+    const anchoredToSameBrand = brandCatIdeal.length > 0;
+    if (anchoredToSameBrand && cutSel === 'auto') {
+      brandLearnNote = `Anchored directly to your ${brandCatIdeal.length} Ideal Fit ${brandCatIdeal[0].brand} ${cat === 'fullbody' ? 'full-body' : cat} piece${brandCatIdeal.length === 1 ? '' : 's'} (no extra brand shift applied)`;
+    }
     const effectiveCut = cutSel === 'auto'
-      ? (learnedBrandOffset > 0 ? 'small' : learnedBrandOffset < 0 ? 'large' : 'true')
+      ? (anchoredToSameBrand ? 'true' : (learnedBrandOffset > 0 ? 'small' : learnedBrandOffset < 0 ? 'large' : 'true'))
       : cutSel;
 
     const pairedItems = Array.from(sizePairIds).map(id => ownedAll.find(x => x.id === id)).filter(Boolean);
 
     const tryOnWrap = document.getElementById('tryOnSizeLogWrap');
     if (tryOnWrap) {
-      tryOnWrap.innerHTML = state.sizeLogs.length ? `
+      tryOnWrap.innerHTML = tryOnSized.length ? `
         <table class="w-full text-left border-collapse text-xs">
           <thead>
             <tr class="border-b border-slate-200 text-slate-500">
@@ -5195,21 +5301,28 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
-            ${state.sizeLogs.map(sl => `
+            ${tryOnSized.map(sl => {
+              const hasVec = Array.isArray(sl.clipEmbedding) && sl.clipEmbedding.length === 512;
+              const fitCls = sl.fitFeedback === 'perfect' ? 'bg-emerald-50 text-emerald-800' : sl.fitFeedback === 'tight' ? 'bg-rose-50 text-rose-800' : sl.fitFeedback === 'loose' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600';
+              const fitLbl = sl.fitFeedback === 'perfect' ? 'Ideal Fit' : sl.fitFeedback === 'tight' ? 'Too Tight' : sl.fitFeedback === 'loose' ? 'Too Loose' : 'Untested';
+              return `
               <tr>
-                <td class="py-2 pr-2 font-medium text-slate-900">${escapeHtml(sl.name)} <span class="text-[10px] text-slate-400">(${escapeHtml(sl.date)})</span></td>
+                <td class="py-2 pr-2 font-medium text-slate-900">
+                  ${escapeHtml(sl.name)}
+                  ${hasVec ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold">512-D</span>` : ''}
+                </td>
                 <td class="py-2 pr-2 text-slate-600">${escapeHtml(sl.brand || '—')}</td>
                 <td class="py-2 pr-2 text-slate-500 capitalize">${escapeHtml(sl.category === 'fullbody' ? 'Full Body' : sl.category)}</td>
                 <td class="py-2 pr-2 font-semibold text-purple-800">${escapeHtml(sl.sizeLabel)}</td>
-                <td class="py-2 pr-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${sl.fitFeedback === 'perfect' ? 'bg-emerald-50 text-emerald-800' : sl.fitFeedback === 'tight' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'}">${escapeHtml(sl.fitFeedback)}</span></td>
+                <td class="py-2 pr-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${fitCls}">${fitLbl}</span></td>
                 <td class="py-2 text-right whitespace-nowrap">
-                  <button type="button" data-sl-edit="${escapeHtml(sl.id)}" class="sl-edit-btn text-[11px] font-semibold text-blue-700 hover:underline mr-2">Edit</button>
-                  <button type="button" data-sl-del="${escapeHtml(sl.id)}" class="sl-del-btn text-[11px] font-semibold text-rose-600 hover:underline">Delete</button>
+                  <button type="button" data-action="edit" data-id="${escapeHtml(sl.id)}" class="item-act text-[11px] font-semibold text-blue-700 hover:underline mr-2">Edit</button>
+                  <button type="button" data-action="delete" data-id="${escapeHtml(sl.id)}" class="item-act text-[11px] font-semibold text-rose-600 hover:underline">Delete</button>
                 </td>
-              </tr>
-            `).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
-        </table>` : `<p class="text-xs text-slate-500">No try-on sizing logs yet. Add one above or enter a size when creating an In-Store Try-On.</p>`;
+        </table>` : `<p class="text-xs text-slate-500">No sized In-Store Try-Ons yet. Record a size when adding an In-Store Try-On in Live Pairing, or edit one under <strong>Closet &rarr; In-Store Try-Ons</strong>.</p>`;
     }
 
     const allSizedOwned = ownedAll.filter(i => i.sizeLabel);
@@ -5220,7 +5333,8 @@
             <th class="py-2 pr-3 font-semibold">Piece</th>
             <th class="py-2 pr-3 font-semibold">Brand</th>
             <th class="py-2 pr-3 font-semibold">Size</th>
-            <th class="py-2 font-semibold">Fit Outcome</th>
+            <th class="py-2 pr-3 font-semibold">Fit Outcome</th>
+            <th class="py-2 font-semibold text-right">Action</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -5229,7 +5343,8 @@
               <td class="py-2.5 pr-3 font-medium text-slate-900">${escapeHtml(i.name)}</td>
               <td class="py-2.5 pr-3 text-slate-600">${escapeHtml(i.brand || '—')}</td>
               <td class="py-2.5 pr-3 font-semibold text-blue-800">${escapeHtml(i.sizeLabel || '—')}</td>
-              <td class="py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${i.fitFeedback === 'perfect' ? 'bg-emerald-50 text-emerald-800' : i.fitFeedback === 'tight' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(i.fitFeedback || 'untested')}</span></td>
+              <td class="py-2.5 pr-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${i.fitFeedback === 'perfect' ? 'bg-emerald-50 text-emerald-800' : i.fitFeedback === 'tight' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(i.fitFeedback || 'untested')}</span></td>
+              <td class="py-2.5 text-right"><button type="button" data-action="edit" data-id="${escapeHtml(i.id)}" class="item-act text-[11px] font-semibold text-blue-700 hover:underline">Edit</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -5239,7 +5354,7 @@
       document.getElementById('sizePredictionBox').innerHTML = `
         <div class="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-xs text-slate-600 space-y-1">
           <div class="font-bold text-slate-800">No ${escapeHtml(cat === 'fullbody' ? 'Full Body' : cat)} sizing data yet</div>
-          <p>Add a size label to an owned <strong>${escapeHtml(cat === 'fullbody' ? 'Full Body' : cat)}</strong> piece or log a Try-On Fit on the right to generate personalized recommendations.</p>
+          <p>Add a size label to an owned <strong>${escapeHtml(cat === 'fullbody' ? 'Full Body' : cat)}</strong> piece or record a size on an In-Store Try-On to generate personalized recommendations.</p>
         </div>`;
       return;
     }
@@ -5471,7 +5586,7 @@
       document.getElementById('modalTitle').textContent = 'Add Piece to Closet or Wishlist';
       document.getElementById('fId').value = '';
       setBrandValue('fBrandSelect', 'fBrand', '');
-      document.getElementById('fStatus').value = closetSubTab === 'wishlist' ? 'wishlist' : 'owned';
+      document.getElementById('fStatus').value = closetSubTab === 'wishlist' ? 'wishlist' : closetSubTab === 'tryon' ? 'tryon' : 'owned';
       document.getElementById('fCategory').value = '';
       document.getElementById('fWarmth').value = '';
       document.getElementById('fFormality').value = '';
@@ -5598,6 +5713,7 @@
 
   document.getElementById('subOwned').addEventListener('click', () => { closetSubTab = 'owned'; renderClosetView(); });
   document.getElementById('subWishlist').addEventListener('click', () => { closetSubTab = 'wishlist'; renderClosetView(); });
+  document.getElementById('subTryOn').addEventListener('click', () => { closetSubTab = 'tryon'; renderClosetView(); });
   document.getElementById('subDonated').addEventListener('click', () => { closetSubTab = 'donated'; renderClosetView(); });
   document.getElementById('closetSearch').addEventListener('input', renderClosetView);
   document.getElementById('closetCatFilter').addEventListener('change', renderClosetView);
@@ -5778,6 +5894,7 @@
       if (action === 'edit') openItemModal(id);
 
       else if (action === 'promote') { it.status = 'owned'; saveState(); renderAll(); showToast(`Moved ${it.name} to Owned Wardrobe!`); }
+      else if (action === 'toWishlist') { it.status = 'wishlist'; saveState(); renderAll(); showToast(`Moved ${it.name} to Wishlist!`); }
       else if (action === 'archive') { it.status = 'donated'; saveState(); renderAll(); showToast(`Archived ${it.name} (restore anytime under Archived / Donated).`); }
       else if (action === 'restore') { it.status = 'owned'; saveState(); renderAll(); showToast(`Restored ${it.name} to Owned Wardrobe.`); }
       else if (action === 'delete') {
@@ -5873,7 +5990,7 @@
           clipTextWeight: 100
         });
         saveState(); renderAll();
-        showToast(`Saved "${arch.name}"${arch.clipEmbedding ? ' (with 512-D CLIP vector)' : ''} to Potential Future Clothes.`);
+        showToast(`Saved "${arch.name}"${arch.clipEmbedding ? ' (with 512-D CLIP vector)' : ''} to Wishlist.`);
       }
     }
 
@@ -6081,22 +6198,7 @@
       clipTextNote: txt,
       clipTextWeight: pendingTryOnPhoto ? 35 : 100
     });
-    const tSizeVal = document.getElementById('tSizeLabel').value.trim();
-    const tFitVal = document.getElementById('tFitFeedback').value || 'untested';
-    const tBrandVal = getBrandValue('tBrandSelect', 'tBrand');
-    if (tSizeVal) {
-      if (!Array.isArray(state.sizeLogs)) state.sizeLogs = [];
-      state.sizeLogs.unshift({
-        id: 'sl_' + Date.now(),
-        date: formatLocalDate(),
-        name,
-        brand: tBrandVal,
-        category: cat,
-        sizeLabel: tSizeVal,
-        fitFeedback: tFitVal === 'untested' ? 'perfect' : tFitVal,
-        clipEmbedding: clipRes ? clipRes.embedding512 : null
-      });
-    }
+    // In-Store Try-On is saved directly in state.items (status: 'tryon') and automatically feeds Sizing & Closet → In-Store Try-Ons
     builderItemIds.push(newId);
     saveState();
 
@@ -6125,7 +6227,7 @@
         it.status = 'wishlist';
         saveState();
         renderAll();
-        showToast(`Saved "${it.name}" to Potential Future Clothes!`);
+        showToast(`Saved "${it.name}" to Wishlist!`);
       }
       return;
     }
@@ -6996,97 +7098,104 @@
     }
   });
 
-  document.getElementById('btnEmbedSizeClip').addEventListener('click', async () => {
-    const txt = document.getElementById('sizeClipText').value.trim();
-    const st = document.getElementById('sizeClipStatus');
-    if (!txt) {
+  function getSizingClipAttrs() {
+    const wRaw = document.getElementById('sizeWarmth').value;
+    const fRaw = document.getElementById('sizeFormality').value;
+    const rRaw = document.getElementById('sizeRain').value;
+    return {
+      category: document.getElementById('sizeCat').value,
+      fabric: document.getElementById('sizeFabric').value.trim(),
+      warmth: wRaw === '' ? null : Number(wRaw),
+      formality: fRaw === '' ? null : Number(fRaw),
+      silhouette: document.getElementById('sizeSilhouette').value,
+      rain: rRaw === '' ? null : Number(rRaw),
+      clipTextNote: document.getElementById('sizeClipText').value.trim()
+    };
+  }
+
+  async function refreshSizingClipVector(onProgress) {
+    const attrs = getSizingClipAttrs();
+    const nudge = buildAttributeNudgeText(attrs, !sizingTargetImgVec);
+    const w = Number(document.getElementById('sizeClipWeight').value) / 100;
+    if (!sizingTargetImgVec && !nudge) {
       sizingTargetClipVec = null;
       sizingTargetClipLabel = '';
-      st.classList.add('hidden');
+      document.getElementById('btnClearSizeClip').classList.add('hidden');
       renderSizingView();
       return;
     }
+    const eng = await ensureClipLoaded(onProgress);
+    const txtVec = nudge ? await encodeClipText(nudge, onProgress) : null;
+    const blended = blendEmbeddings512(sizingTargetImgVec, txtVec, nudge ? (sizingTargetImgVec ? w : 1) : 0);
+    sizingTargetClipVec = blended;
+    sizingTargetClipLabel = sizingTargetImgVec
+      ? (nudge ? `Photo + ${Math.round(w * 100)}% text/attrs` : 'Uploaded target photo')
+      : nudge;
+    document.getElementById('sizeWishSelect').value = '';
+    document.getElementById('btnClearSizeClip').classList.remove('hidden');
+    renderSizingView();
+  }
+
+  document.getElementById('sizeClipWeight').addEventListener('input', e => {
+    document.getElementById('sizeClipWeightLabel').textContent = `Text: ${e.target.value}%`;
+  });
+
+  document.getElementById('sizePhotoInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const st = document.getElementById('sizeClipStatus');
     st.classList.remove('hidden');
-    st.textContent = 'Encoding 512-D CLIP style description...';
+    st.textContent = 'Processing target garment photo...';
+    const autoRmbg = document.getElementById('sizeAutoRmbg').checked;
+    compressAndExtractColor(file, async (dataUrl) => {
+      document.getElementById('sizePhotoPreview').innerHTML = `<img src="${dataUrl}" alt="Target" class="w-full h-full object-contain">`;
+      let clipUrl = dataUrl;
+      if (autoRmbg) {
+        st.textContent = 'Step 1/2: Removing background with RMBG-1.4...';
+        try {
+          const cut = await runRmbgCutout(dataUrl, msg => { st.textContent = msg; });
+          clipUrl = cut.clipInputJpg;
+          document.getElementById('sizePhotoPreview').innerHTML = `<img src="${cut.cutoutPng}" alt="Target Cutout" class="w-full h-full object-contain">`;
+        } catch (_) {}
+      }
+      st.textContent = 'Step 2/2: Embedding target photo in 512-D CLIP...';
+      try {
+        const res = await analyzeImageWithClip(clipUrl, msg => { st.textContent = msg; }, '', 0);
+        sizingTargetImgVec = res.imageEmbedding512 || res.embedding512;
+        await refreshSizingClipVector(msg => { st.textContent = msg; });
+        st.textContent = `512-D target ready (${res.inferred.category}, warmth ${res.inferred.warmth}/5).`;
+      } catch (err) {
+        st.textContent = 'Could not run CLIP on photo right now.';
+      }
+    });
+  });
+
+  document.getElementById('btnEmbedSizeClip').addEventListener('click', async () => {
+    const st = document.getElementById('sizeClipStatus');
+    st.classList.remove('hidden');
+    st.textContent = 'Applying 512-D CLIP text & attribute adjustments...';
     try {
-      const vec = await encodeClipText(txt, msg => { st.textContent = msg; });
-      sizingTargetClipVec = vec;
-      sizingTargetClipLabel = txt;
-      document.getElementById('sizeWishSelect').value = '';
-      st.textContent = `512-D style vector ready for "${txt}".`;
-      renderSizingView();
+      await refreshSizingClipVector(msg => { st.textContent = msg; });
+      st.textContent = sizingTargetClipVec ? `512-D target updated (${sizingTargetClipLabel}).` : 'Cleared 512-D target.';
     } catch (err) {
       st.textContent = 'Could not load CLIP right now.';
     }
   });
 
-  document.getElementById('sizeLogForm').addEventListener('submit', e => {
-    e.preventDefault();
-    if (!Array.isArray(state.sizeLogs)) state.sizeLogs = [];
-    const editId = document.getElementById('slEditId').value;
-    const entry = {
-      id: editId || ('sl_' + Date.now()),
-      date: formatLocalDate(),
-      name: document.getElementById('slName').value.trim(),
-      brand: getBrandValue('slBrandSelect', 'slBrand'),
-      category: document.getElementById('slCat').value,
-      sizeLabel: document.getElementById('slSize').value.trim(),
-      fitFeedback: document.getElementById('slFit').value,
-      clipEmbedding: null
-    };
-    if (editId) {
-      const idx = state.sizeLogs.findIndex(x => x.id === editId);
-      if (idx >= 0) {
-        entry.date = state.sizeLogs[idx].date;
-        entry.clipEmbedding = state.sizeLogs[idx].clipEmbedding || null;
-        state.sizeLogs[idx] = entry;
-      }
-      showToast(`Updated try-on fit log for "${entry.name}".`);
-    } else {
-      state.sizeLogs.unshift(entry);
-      showToast(`Logged try-on fit: ${entry.brand || entry.name} (${entry.sizeLabel} · ${entry.fitFeedback}).`);
-    }
-    document.getElementById('sizeLogForm').reset();
-    document.getElementById('slEditId').value = '';
-    document.getElementById('btnSaveSizeLog').textContent = '+ Log Try-On Fit';
-    document.getElementById('btnCancelSizeLogEdit').classList.add('hidden');
-    saveState();
+  document.getElementById('btnClearSizeClip').addEventListener('click', () => {
+    sizingTargetClipVec = null;
+    sizingTargetImgVec = null;
+    sizingTargetClipLabel = '';
+    document.getElementById('sizePhotoInput').value = '';
+    document.getElementById('sizePhotoPreview').textContent = 'Photo';
+    document.getElementById('sizeClipText').value = '';
+    ['sizeFabric', 'sizeWarmth', 'sizeFormality', 'sizeSilhouette', 'sizeRain'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('sizeClipStatus').classList.add('hidden');
+    document.getElementById('btnClearSizeClip').classList.add('hidden');
     renderSizingView();
   });
 
-  document.getElementById('btnCancelSizeLogEdit').addEventListener('click', () => {
-    document.getElementById('sizeLogForm').reset();
-    document.getElementById('slEditId').value = '';
-    document.getElementById('btnSaveSizeLog').textContent = '+ Log Try-On Fit';
-    document.getElementById('btnCancelSizeLogEdit').classList.add('hidden');
-  });
-
-  document.getElementById('tryOnSizeLogWrap').addEventListener('click', e => {
-    const editBtn = e.target.closest('.sl-edit-btn');
-    if (editBtn) {
-      const sl = (state.sizeLogs || []).find(x => x.id === editBtn.dataset.slEdit);
-      if (!sl) return;
-      document.getElementById('slEditId').value = sl.id;
-      document.getElementById('slName').value = sl.name;
-      setBrandValue('slBrandSelect', 'slBrand', sl.brand || '');
-      document.getElementById('slCat').value = sl.category;
-      document.getElementById('slSize').value = sl.sizeLabel;
-      document.getElementById('slFit').value = sl.fitFeedback;
-      document.getElementById('btnSaveSizeLog').textContent = 'Save Edit';
-      document.getElementById('btnCancelSizeLogEdit').classList.remove('hidden');
-      return;
-    }
-    const delBtn = e.target.closest('.sl-del-btn');
-    if (delBtn) {
-      const id = delBtn.dataset.slDel;
-      openConfirmModal('Delete Try-On Fit Log?', 'Remove this try-on sizing record from brand & size learning?', () => {
-        state.sizeLogs = (state.sizeLogs || []).filter(x => x.id !== id);
-        saveState();
-        renderSizingView();
-        showToast('Deleted try-on fit log.');
-      });
-    }
-  });
+  // Try-On Fit Evidence edits/deletes are handled by the unified delegated .item-act handler
   document.getElementById('sizePairPicker').addEventListener('click', e => {
     const btn = e.target.closest('.spair-pill');
     if (!btn) return;
@@ -7327,6 +7436,8 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
+
+  document.getElementById('retireThresholdSlider').addEventListener('input', renderRetireView);
 
   document.getElementById('weatherCity').addEventListener('change', e => setSavedCity(e.target.value));
   document.getElementById('rCity').addEventListener('change', e => setSavedCity(e.target.value));
