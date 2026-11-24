@@ -184,7 +184,7 @@
           <option value="shoes">Shoes</option>
           <option value="accessory">Accessories</option>
         </select>
-        <button type="button" id="btnBatchClip" title="Embed new photos and re-nudge all 512-D CLIP vectors with your fabric, warmth, formality, silhouette, comfort, weatherproof & fit tags" class="px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition">Update CLIP</button>
+        <button type="button" id="btnBatchClip" title="Embed new photos and refresh 512-D CLIP vectors with your text corrections, fabric, warmth, formality, silhouette & waterproof tags" class="px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition">Update CLIP</button>
         <button type="button" id="btnResetDemo" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100">Reset Sample</button>
       </div>
     </div>
@@ -916,7 +916,7 @@
             <input type="range" id="fClipWeight" min="0" max="100" value="35" class="flex-1 accent-indigo-700">
             <span>Pure Text</span>
           </div>
-          <p class="text-[10px] text-indigo-800/80 leading-snug">Any filled <strong>Fabric, Warmth, Formality, Silhouette, Comfort, Weatherproof &amp; Fit</strong> fields below are automatically blended into this 512-D CLIP nudge on photo upload, Apply 512-D, or Update CLIP.</p>
+          <p class="text-[10px] text-indigo-800/80 leading-snug"><strong>CLIP Analysis</strong> shows only your <strong>photo + text correction</strong> above. Filled <strong>Fabric, Warmth, Formality, Silhouette &amp; Water-Resistant</strong> fields still nudge the underlying 512-D pairing vector without changing the CLIP Analysis readout.</p>
         </div>
       </div>
 
@@ -1386,50 +1386,36 @@
     const customNote = (attrs.clipTextNote || '').trim();
     if (customNote) parts.push(customNote);
     const fabric = (attrs.fabric || '').trim();
-    if (fabric) parts.push(`made of ${fabric}`);
-    const silMap = {
-      fitted: 'fitted slim cut',
-      structured: 'structured regular tailored cut',
-      relaxed: 'relaxed oversized boxy cut'
-    };
-    if (attrs.silhouette && silMap[attrs.silhouette]) parts.push(silMap[attrs.silhouette]);
+    if (fabric) parts.push(`${fabric} fabric`);
     const warmthMap = {
-      1: 'ultralight breathable summer weight',
-      2: 'lightweight spring autumn layer',
-      3: 'midweight layering garment',
-      4: 'warm heavy cold-weather garment',
-      5: 'heavy insulated winter garment'
+      1: 'very lightweight thin breathable summer clothing',
+      2: 'light spring or early fall clothing',
+      3: 'mid-weight layering clothing',
+      4: 'warm thick cold-weather wool garment',
+      5: 'heavy insulated winter puffer parka extreme cold winter gear'
     };
     if (attrs.warmth !== null && attrs.warmth !== undefined && attrs.warmth !== '' && warmthMap[Number(attrs.warmth)]) {
       parts.push(warmthMap[Number(attrs.warmth)]);
     }
+    const silMap = {
+      fitted: 'slim fitted close-fitting silhouette',
+      structured: 'structured regular straight-cut silhouette',
+      relaxed: 'relaxed oversized loose boxy silhouette'
+    };
+    if (attrs.silhouette && silMap[attrs.silhouette]) parts.push(silMap[attrs.silhouette]);
     const formMap = {
-      1: 'casual lounge activewear style',
-      2: 'everyday casual style',
-      3: 'smart casual versatile style',
-      4: 'tailored office dressy style',
-      5: 'formal evening dresswear style'
+      1: 'athletic sportswear or loungewear',
+      2: 'everyday casual streetwear',
+      3: 'smart casual refined clothing',
+      4: 'tailored business office clothing',
+      5: 'formal black-tie evening attire'
     };
     if (attrs.formality !== null && attrs.formality !== undefined && attrs.formality !== '' && formMap[Number(attrs.formality)]) {
       parts.push(formMap[Number(attrs.formality)]);
     }
-    if (attrs.rain !== null && attrs.rain !== undefined && attrs.rain !== '') {
-      parts.push(Number(attrs.rain) ? 'waterproof wind-resistant rain gear' : 'dry-weather non-waterproof fabric');
+    if (attrs.rain !== null && attrs.rain !== undefined && attrs.rain !== '' && Number(attrs.rain) === 1) {
+      parts.push('waterproof water-resistant technical rain gear');
     }
-    const comfortMap = {
-      5: 'soft effortless comfortable drape',
-      4: 'comfortable wearable feel',
-      2: 'slightly stiff structured feel',
-      1: 'stiff restrictive uncomfortable feel'
-    };
-    if (attrs.comfort !== null && attrs.comfort !== undefined && attrs.comfort !== '' && comfortMap[Number(attrs.comfort)]) {
-      parts.push(comfortMap[Number(attrs.comfort)]);
-    }
-    const fitMap = {
-      tight: 'tight snug fit',
-      loose: 'loose roomy fit'
-    };
-    if (attrs.fitFeedback && fitMap[attrs.fitFeedback]) parts.push(fitMap[attrs.fitFeedback]);
 
     if (includeIdentity) {
       const name = (attrs.name || '').trim();
@@ -1506,7 +1492,7 @@
     return { inferred, confidences, avgConf, styleTags };
   }
 
-  async function analyzeImageWithClip(dataUrl, onProgress, textNote, textWeight01) {
+  async function analyzeImageWithClip(dataUrl, onProgress, textNote, textWeight01, vectorTextNote) {
     const eng = await ensureClipLoaded(onProgress);
     let imgVec = null;
     if (dataUrl) {
@@ -1516,17 +1502,31 @@
       const { image_embeds } = await eng.visionModel(imageInputs);
       imgVec = l2Normalize(image_embeds.data);
     }
-    let txtVec = null;
-    if (textNote && textNote.trim()) {
+    const w = textWeight01 ?? 0.35;
+    const cleanNote = (textNote || '').trim();
+    const cleanVecNote = (vectorTextNote !== undefined ? vectorTextNote : cleanNote).trim();
+
+    let noteVec = null;
+    if (cleanNote) {
       if (onProgress) onProgress('Encoding 512-D CLIP text correction...');
-      txtVec = await encodeClipText(textNote, onProgress);
+      noteVec = await encodeClipText(cleanNote, onProgress);
     }
-    const finalVec = blendEmbeddings512(imgVec, txtVec, textWeight01 ?? 0.35);
-    const meta = inferAttributesFromEmbedding(eng, finalVec);
+    // CLIP Analysis readout strictly reflects Photo + Text Correction only.
+    const analysisVec = blendEmbeddings512(imgVec, noteVec, cleanNote ? (imgVec ? w : 1) : 0);
+
+    let fullTxtVec = noteVec;
+    if (cleanVecNote && cleanVecNote !== cleanNote) {
+      fullTxtVec = await encodeClipText(cleanVecNote, onProgress);
+    }
+    const finalVec = cleanVecNote
+      ? blendEmbeddings512(imgVec, fullTxtVec, imgVec ? w : 1)
+      : imgVec;
+
+    const meta = inferAttributesFromEmbedding(eng, analysisVec || finalVec);
     return {
       embedding512: finalVec,
       imageEmbedding512: imgVec,
-      textEmbedding512: txtVec,
+      textEmbedding512: fullTxtVec,
       inferred: meta.inferred,
       confidences: meta.confidences,
       avgConf: meta.avgConf,
@@ -4297,7 +4297,7 @@
           inferred: it.clipInferred,
           confidences: it.clipConfidences || { category: 80, warmth: 75, formality: 75, silhouette: 75, rain: 75 },
           avgConf: 76,
-          nudgeText: it.clipNudgeText || it.clipTextNote || ''
+          nudgeText: it.clipTextNote || ''
         };
         renderModalClipBox(pendingClipResult, null);
       }
@@ -4464,10 +4464,12 @@
 
     renderModalClipBox(null, runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on your garment photo...');
     try {
-      const nudge = buildAttributeNudgeText(getModalClipAttrs(), false);
+      const attrs = getModalClipAttrs();
+      const rawNote = attrs.clipTextNote;
+      const vecNudge = buildAttributeNudgeText(attrs, false);
       const w = Number(document.getElementById('fClipWeight').value) / 100;
-      const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), nudge, w);
-      res.nudgeText = nudge;
+      const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), rawNote, w, vecNudge);
+      res.nudgeText = rawNote;
       pendingClipResult = res;
       renderModalClipBox(res, null);
       const nameEl = document.getElementById('fName');
@@ -4531,15 +4533,17 @@
     let clipNudgeText = pendingClipResult ? (pendingClipResult.nudgeText || '') : (keepOldClip ? (existing.clipNudgeText || '') : '');
     const prevWeight = existing && existing.clipTextWeight != null ? existing.clipTextWeight : 35;
 
-    // If CLIP is already loaded in memory and we have a base image vector (or text-only attributes),
-    // automatically re-blend on Save whenever attributes or text weight changed.
+    // If CLIP is already loaded and text correction / fabric / text weight changed,
+    // update the 512-D vector on Save while keeping CLIP Analysis strictly from Photo + Text Correction.
     if (clipEngine.status === 'ready' && (clipImgEmb || desiredNudge) && (desiredNudge !== clipNudgeText || (existing && clipTextWeight !== prevWeight))) {
       try {
         const w = clipTextWeight / 100;
-        const txtVec = desiredNudge ? await encodeClipText(desiredNudge) : null;
-        const blended = blendEmbeddings512(clipImgEmb, txtVec, desiredNudge ? (clipImgEmb ? w : 1) : 0);
+        const noteVec = clipTextNote ? await encodeClipText(clipTextNote) : null;
+        const analysisVec = blendEmbeddings512(clipImgEmb, noteVec, clipTextNote ? (clipImgEmb ? w : 1) : 0);
+        const fullTxtVec = desiredNudge === clipTextNote ? noteVec : (desiredNudge ? await encodeClipText(desiredNudge) : null);
+        const blended = blendEmbeddings512(clipImgEmb, fullTxtVec, desiredNudge ? (clipImgEmb ? w : 1) : 0);
         if (blended) {
-          const meta = inferAttributesFromEmbedding(clipEngine, blended);
+          const meta = inferAttributesFromEmbedding(clipEngine, analysisVec || blended);
           clipEmb = blended;
           clipInf = meta.inferred;
           clipConf = meta.confidences;
@@ -5403,12 +5407,14 @@
     const w = Number(document.getElementById('fClipWeight').value) / 100;
     const baseImgVec = pendingClipResult ? (pendingClipResult.imageEmbedding512 || pendingClipResult.embedding512) : null;
     const hasPhoto = Boolean(baseImgVec || pendingPhotoDataUrl);
-    const nudge = buildAttributeNudgeText(getModalClipAttrs(), !hasPhoto);
-    if (!nudge && !hasPhoto) {
-      showToast('Upload a photo or fill in fabric/attributes/text to compute a 512-D CLIP vector.');
+    const attrs = getModalClipAttrs();
+    const rawNote = attrs.clipTextNote;
+    const vecNudge = buildAttributeNudgeText(attrs, !hasPhoto);
+    if (!vecNudge && !hasPhoto) {
+      showToast('Upload a photo or enter a CLIP text correction to compute a 512-D vector.');
       return;
     }
-    renderModalClipBox(null, 'Applying 512-D CLIP attribute & text nudge...');
+    renderModalClipBox(null, 'Applying 512-D CLIP text refinement...');
     try {
       const eng = await ensureClipLoaded(msg => renderModalClipBox(null, msg));
       let imgVec = baseImgVec;
@@ -5416,21 +5422,23 @@
         const imgRes = await analyzeImageWithClip(pendingPhotoDataUrl, msg => renderModalClipBox(null, msg));
         imgVec = imgRes.imageEmbedding512;
       }
-      const txtVec = nudge ? await encodeClipText(nudge, msg => renderModalClipBox(null, msg)) : null;
-      const blended = blendEmbeddings512(imgVec, txtVec, nudge ? (imgVec ? w : 1) : 0);
-      const meta = inferAttributesFromEmbedding(eng, blended);
+      const noteVec = rawNote ? await encodeClipText(rawNote, msg => renderModalClipBox(null, msg)) : null;
+      const analysisVec = blendEmbeddings512(imgVec, noteVec, rawNote ? (imgVec ? w : 1) : 0);
+      const fullTxtVec = vecNudge === rawNote ? noteVec : (vecNudge ? await encodeClipText(vecNudge, msg => renderModalClipBox(null, msg)) : null);
+      const blended = blendEmbeddings512(imgVec, fullTxtVec, vecNudge ? (imgVec ? w : 1) : 0);
+      const meta = inferAttributesFromEmbedding(eng, analysisVec || blended);
       pendingClipResult = {
         embedding512: blended,
         imageEmbedding512: imgVec,
-        textEmbedding512: txtVec,
+        textEmbedding512: fullTxtVec,
         inferred: meta.inferred,
         confidences: meta.confidences,
         avgConf: meta.avgConf,
         styleTags: meta.styleTags,
-        nudgeText: nudge
+        nudgeText: rawNote
       };
       renderModalClipBox(pendingClipResult, null);
-      showToast('Blended 512-D CLIP embedding updated with attributes & text!');
+      showToast('Updated 512-D CLIP analysis & embedding!');
     } catch (err) {
       renderModalClipBox(null, 'Could not run CLIP text encoder right now.');
     }
@@ -5753,39 +5761,42 @@
         btn.textContent = `Updating ${idx + 1}/${targets.length}...`;
         const w = (it.clipTextWeight ?? 35) / 100;
         const hasCachedImg = Array.isArray(it.clipImageEmbedding) && it.clipImageEmbedding.length === 512;
-        const nudge = buildAttributeNudgeText(it, !it.photo && !hasCachedImg);
+        const rawNote = (it.clipTextNote || '').trim();
+        const vecNudge = buildAttributeNudgeText(it, !it.photo && !hasCachedImg);
 
         if (it.photo && !hasCachedImg) {
-          const res = await analyzeImageWithClip(it.photo, null, nudge, w);
+          const res = await analyzeImageWithClip(it.photo, null, rawNote, w, vecNudge);
           it.clipEmbedding = res.embedding512;
           it.clipImageEmbedding = res.imageEmbedding512;
           it.clipInferred = res.inferred;
           it.clipConfidences = res.confidences;
-          it.clipNudgeText = nudge;
+          it.clipNudgeText = vecNudge;
           photoEncoded++;
         } else if (hasCachedImg) {
-          const txtVec = nudge ? await encodeClipText(nudge) : null;
-          const blended = blendEmbeddings512(it.clipImageEmbedding, txtVec, nudge ? w : 0);
-          const meta = inferAttributesFromEmbedding(eng, blended);
+          const noteVec = rawNote ? await encodeClipText(rawNote) : null;
+          const analysisVec = blendEmbeddings512(it.clipImageEmbedding, noteVec, rawNote ? w : 0);
+          const fullTxtVec = vecNudge === rawNote ? noteVec : (vecNudge ? await encodeClipText(vecNudge) : null);
+          const blended = blendEmbeddings512(it.clipImageEmbedding, fullTxtVec, vecNudge ? w : 0);
+          const meta = inferAttributesFromEmbedding(eng, analysisVec || blended);
           it.clipEmbedding = blended;
           it.clipInferred = meta.inferred;
           it.clipConfidences = meta.confidences;
-          it.clipNudgeText = nudge;
+          it.clipNudgeText = vecNudge;
           textRefreshed++;
-        } else if (nudge) {
-          const txtVec = await encodeClipText(nudge);
+        } else if (vecNudge) {
+          const txtVec = await encodeClipText(vecNudge);
           const meta = inferAttributesFromEmbedding(eng, txtVec);
           it.clipEmbedding = txtVec;
           it.clipImageEmbedding = null;
           it.clipInferred = meta.inferred;
           it.clipConfidences = meta.confidences;
-          it.clipNudgeText = nudge;
+          it.clipNudgeText = vecNudge;
           textRefreshed++;
         }
       }
       saveState();
       renderAll();
-      showToast(`Updated CLIP for ${targets.length} items (${photoEncoded} photos embedded, ${textRefreshed} nudged with attributes)!`);
+      showToast(`Updated CLIP for ${targets.length} items (${photoEncoded} photos embedded, ${textRefreshed} refreshed)!`);
     } catch (err) {
       showToast('Update CLIP failed—check internet access to HuggingFace/jsDelivr.');
     } finally {
