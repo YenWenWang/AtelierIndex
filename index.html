@@ -184,7 +184,7 @@
           <option value="shoes">Shoes</option>
           <option value="accessory">Accessories</option>
         </select>
-        <button type="button" id="btnBatchClip" class="px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition">Batch Embed Photos (CLIP)</button>
+        <button type="button" id="btnBatchClip" title="Embed new photos and re-nudge all 512-D CLIP vectors with your fabric, warmth, formality, silhouette, comfort, weatherproof & fit tags" class="px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-semibold transition">Update CLIP</button>
         <button type="button" id="btnResetDemo" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100">Reset Sample</button>
       </div>
     </div>
@@ -628,7 +628,7 @@
       <div class="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-5 space-y-4">
         <div>
           <h2 class="text-base font-bold text-slate-900">Next-Purchase Size Predictor</h2>
-          <p class="text-xs text-slate-600 mt-0.5">Uses measurements and fit feedback from your existing wardrobe to recommend what size to buy next.</p>
+          <p class="text-xs text-slate-600 mt-0.5">Uses size labels and fit outcomes from your existing wardrobe to recommend what size to buy next.</p>
         </div>
 
         <div class="space-y-3">
@@ -676,7 +676,7 @@
       <div class="lg:col-span-7 bg-white rounded-xl border border-slate-200 p-5 space-y-4">
         <div>
           <h3 class="text-sm font-bold text-slate-900">Your Personal Fit Envelope (Extracted From Owned Wardrobe)</h3>
-          <p class="text-xs text-slate-500">Edit any garment's size, measurements, or fit outcome in your closet to sharpen predictions.</p>
+          <p class="text-xs text-slate-500">Edit any garment's size or fit outcome in your closet to sharpen predictions.</p>
         </div>
         <div id="sizingTableWrap" class="overflow-x-auto"></div>
       </div>
@@ -916,6 +916,7 @@
             <input type="range" id="fClipWeight" min="0" max="100" value="35" class="flex-1 accent-indigo-700">
             <span>Pure Text</span>
           </div>
+          <p class="text-[10px] text-indigo-800/80 leading-snug">Any filled <strong>Fabric, Warmth, Formality, Silhouette, Comfort, Weatherproof &amp; Fit</strong> fields below are automatically blended into this 512-D CLIP nudge on photo upload, Apply 512-D, or Update CLIP.</p>
         </div>
       </div>
 
@@ -1042,15 +1043,11 @@
         </div>
       </div>
 
-      <!-- Sizing & Proportion Details (Missing fields are masked out automatically) -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+      <!-- Simple Sizing: Labeled Size + Fit Outcome -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
         <div>
           <label for="fSizeLabel" class="block text-xs font-semibold text-slate-700 mb-1">Labeled Size</label>
-          <input type="text" id="fSizeLabel" placeholder="e.g. M, 32x30, US 10" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-xs">
-        </div>
-        <div>
-          <label for="fMeasurement" class="block text-xs font-semibold text-slate-700 mb-1">Key Measurement</label>
-          <input type="text" id="fMeasurement" placeholder="e.g. Chest 21.5in / Foot 27.5cm" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-xs">
+          <input type="text" id="fSizeLabel" placeholder="e.g. M, 32x30, US 10, EU 43" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-xs">
         </div>
         <div>
           <label for="fFitFeedback" class="block text-xs font-semibold text-slate-700 mb-1">Fit Outcome</label>
@@ -1059,26 +1056,6 @@
             <option value="perfect">Ideal Fit</option>
             <option value="tight">Slightly Small / Tight</option>
             <option value="loose">Slightly Large / Loose</option>
-          </select>
-        </div>
-      </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label for="fFitLength" class="block text-xs font-semibold text-slate-700 mb-1">Length / Cut (Optional — Masked if Blank)</label>
-          <select id="fFitLength" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-xs bg-white">
-            <option value="">Unknown (Skip in Fit Vector)</option>
-            <option value="cropped">Cropped / Short</option>
-            <option value="standard">Standard Length</option>
-            <option value="long">Long / Elongated</option>
-          </select>
-        </div>
-        <div>
-          <label for="fFitRise" class="block text-xs font-semibold text-slate-700 mb-1">Rise / Placement (Optional — Masked if Blank)</label>
-          <select id="fFitRise" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 text-xs bg-white">
-            <option value="">Unknown (Skip in Fit Vector)</option>
-            <option value="low">Low-Rise / Hip</option>
-            <option value="mid">Mid-Rise / Standard</option>
-            <option value="high">High-Rise / Waist</option>
           </select>
         </div>
       </div>
@@ -1401,6 +1378,87 @@
     const out = new Array(512);
     for (let i = 0; i < 512; i++) out[i] = (1 - w) * imgVec[i] + w * txtVec[i];
     return l2Normalize(out);
+  }
+
+  function buildAttributeNudgeText(attrs, includeIdentity = false) {
+    if (!attrs) return '';
+    const parts = [];
+    const customNote = (attrs.clipTextNote || '').trim();
+    if (customNote) parts.push(customNote);
+    const fabric = (attrs.fabric || '').trim();
+    if (fabric) parts.push(`made of ${fabric}`);
+    const silMap = {
+      fitted: 'fitted slim cut',
+      structured: 'structured regular tailored cut',
+      relaxed: 'relaxed oversized boxy cut'
+    };
+    if (attrs.silhouette && silMap[attrs.silhouette]) parts.push(silMap[attrs.silhouette]);
+    const warmthMap = {
+      1: 'ultralight breathable summer weight',
+      2: 'lightweight spring autumn layer',
+      3: 'midweight layering garment',
+      4: 'warm heavy cold-weather garment',
+      5: 'heavy insulated winter garment'
+    };
+    if (attrs.warmth !== null && attrs.warmth !== undefined && attrs.warmth !== '' && warmthMap[Number(attrs.warmth)]) {
+      parts.push(warmthMap[Number(attrs.warmth)]);
+    }
+    const formMap = {
+      1: 'casual lounge activewear style',
+      2: 'everyday casual style',
+      3: 'smart casual versatile style',
+      4: 'tailored office dressy style',
+      5: 'formal evening dresswear style'
+    };
+    if (attrs.formality !== null && attrs.formality !== undefined && attrs.formality !== '' && formMap[Number(attrs.formality)]) {
+      parts.push(formMap[Number(attrs.formality)]);
+    }
+    if (attrs.rain !== null && attrs.rain !== undefined && attrs.rain !== '') {
+      parts.push(Number(attrs.rain) ? 'waterproof wind-resistant rain gear' : 'dry-weather non-waterproof fabric');
+    }
+    const comfortMap = {
+      5: 'soft effortless comfortable drape',
+      4: 'comfortable wearable feel',
+      2: 'slightly stiff structured feel',
+      1: 'stiff restrictive uncomfortable feel'
+    };
+    if (attrs.comfort !== null && attrs.comfort !== undefined && attrs.comfort !== '' && comfortMap[Number(attrs.comfort)]) {
+      parts.push(comfortMap[Number(attrs.comfort)]);
+    }
+    const fitMap = {
+      tight: 'tight snug fit',
+      loose: 'loose roomy fit'
+    };
+    if (attrs.fitFeedback && fitMap[attrs.fitFeedback]) parts.push(fitMap[attrs.fitFeedback]);
+
+    if (includeIdentity) {
+      const name = (attrs.name || '').trim();
+      const cat = (attrs.category || '').trim();
+      if (name) parts.unshift(name);
+      else if (cat && parts.length) parts.unshift(cat);
+    } else if (parts.length && attrs.category) {
+      parts.push(attrs.category);
+    }
+    return parts.join(', ').slice(0, 320);
+  }
+
+  function getModalClipAttrs() {
+    const warmthRaw = document.getElementById('fWarmth').value;
+    const formRaw = document.getElementById('fFormality').value;
+    const comfortRaw = document.getElementById('fComfort').value;
+    const rainRaw = document.getElementById('fRain').value;
+    return {
+      name: document.getElementById('fName').value.trim(),
+      category: document.getElementById('fCategory').value,
+      fabric: document.getElementById('fFabric').value.trim(),
+      silhouette: document.getElementById('fSilhouette').value,
+      warmth: warmthRaw === '' ? null : Number(warmthRaw),
+      formality: formRaw === '' ? null : Number(formRaw),
+      comfort: comfortRaw === '' ? null : Number(comfortRaw),
+      rain: rainRaw === '' ? null : Number(rainRaw),
+      fitFeedback: document.getElementById('fFitFeedback').value,
+      clipTextNote: document.getElementById('fClipText').value.trim()
+    };
   }
 
   async function encodeClipText(text, onProgress) {
@@ -1933,12 +1991,11 @@
     return l2Normalize(out);
   }
 
-  // Masked 4-D Fit/Proportion sub-vector: missing values get weight 0 so they never distort cosine similarity
+  // Masked 2-D Fit sub-vector (ease/fit outcome + layer bulk; CLIP 512-D captures visual length/rise directly)
   function computeFitSubVector(item) {
     const values = [0, 0, 0, 0];
     const weights = [0, 0, 0, 0];
 
-    // Dim 0: Ease / Silhouette (manual=1.0, CLIP fallback=0.55, missing=0)
     const manSil = item.silhouette;
     const clipSil = item.clipInferred ? item.clipInferred.silhouette : null;
     if (manSil) {
@@ -1951,7 +2008,6 @@
       weights[0] = 0.55;
     }
 
-    // Dim 1: Layer Bulk / Warmth (manual=1.0, CLIP fallback=0.55, missing=0)
     const manW = item.warmth;
     const clipW = item.clipInferred ? item.clipInferred.warmth : null;
     if (manW !== null && manW !== undefined && manW !== '') {
@@ -1962,20 +2018,8 @@
       weights[1] = 0.55;
     }
 
-    // Dim 2: Length / Cut (only if entered; otherwise masked out!)
-    if (item.fitLength) {
-      values[2] = item.fitLength === 'cropped' ? -0.8 : item.fitLength === 'long' ? 0.8 : 0.05;
-      weights[2] = 1.0;
-    }
-
-    // Dim 3: Rise / Placement (only if entered; otherwise masked out!)
-    if (item.fitRise) {
-      values[3] = item.fitRise === 'low' ? -0.8 : item.fitRise === 'high' ? 0.8 : 0.05;
-      weights[3] = 1.0;
-    }
-
-    const knownCount = weights.filter(w => w > 0).length;
-    return { values, weights, coverage: knownCount / 4 };
+    const knownCount = (weights[0] > 0 ? 1 : 0) + (weights[1] > 0 ? 1 : 0);
+    return { values, weights, coverage: knownCount / 2 };
   }
 
   // Compute masked similarity between two fit-proportion vectors (skips any missing dims cleanly)
@@ -2669,6 +2713,7 @@
         clipInferred: (raw.clipInferred && typeof raw.clipInferred === 'object') ? raw.clipInferred : null,
         clipConfidences: (raw.clipConfidences && typeof raw.clipConfidences === 'object') ? raw.clipConfidences : null,
         clipTextNote: typeof raw.clipTextNote === 'string' ? raw.clipTextNote.slice(0, 200) : '',
+        clipNudgeText: typeof raw.clipNudgeText === 'string' ? raw.clipNudgeText.slice(0, 320) : '',
         clipTextWeight: isFinite(Number(raw.clipTextWeight)) ? Math.max(0, Math.min(100, Number(raw.clipTextWeight))) : 35
       };
     });
@@ -3897,7 +3942,7 @@
     const viability = { score: Math.max(10, Math.min(98, finalInspoScore)), certainty: finalInspoCert };
 
     const unembeddedNote = unembeddedPhotoCount > 0
-      ? ` Note: ${unembeddedPhotoCount} owned photos don't have CLIP 512-D vectors yet—click "Batch Embed Photos (CLIP)" on the Closet tab for true 512-D matching.`
+      ? ` Note: ${unembeddedPhotoCount} owned photos don't have CLIP 512-D vectors yet—click "Update CLIP" on the Closet tab for true 512-D matching.`
       : '';
 
     const verdict = coverage === 100
@@ -4055,13 +4100,7 @@
     (idealItems.length ? idealItems : ownedCat).forEach(i => { freq[i.sizeLabel] = (freq[i.sizeLabel] || 0) + 1; });
     const baseSize = Object.keys(freq).sort((a, b) => freq[b] - freq[a])[0];
 
-    const parsedMeas = (idealItems.length ? idealItems : ownedCat)
-      .map(i => (i.measurement || '').match(/(\d+(?:\.\d+)?)\s*(in|cm|")/i))
-      .filter(Boolean)
-      .map(m => ({ val: parseFloat(m[1]), unit: m[2].toLowerCase() === '"' ? 'in' : m[2].toLowerCase() }));
-    const measSummary = parsedMeas.length
-      ? `Ideal-fit measurement avg: ${(parsedMeas.reduce((a, b) => a + b.val, 0) / parsedMeas.length).toFixed(1)} ${parsedMeas[0].unit} (${parsedMeas.length} recorded)`
-      : 'Add garment/foot measurements for tighter sizing precision';
+    const fitSummary = `Based on ${ownedCat.length} sized ${cat} piece${ownedCat.length === 1 ? '' : 's'} (${idealItems.length} ideal fit${brandMatches.length ? `, ${brandMatches.length} from ${brandMatches[0].brand}` : ''})`;
 
     // Detect physical layering & proportion context from paired closet pieces
     const pairedThickLayer = pairedItems.some(p => Number(effAttr(p, 'warmth', 2)) >= 3 && (p.category === 'top' || p.category === 'outerwear'));
@@ -4111,16 +4150,15 @@
         const fitCovAvg = pairedItems.reduce((a, p) => a + computeFitSubVector(p).coverage, 0) / pairedItems.length;
         const outfitEv = evaluateOutfit([mockCand, ...pairedItems], { temp: 56, weather: 'clear', occasion: 'casual' });
         score = Math.round(score * 0.65 + outfitEv.score * 0.35);
-        if (fitCovAvg < 0.5) notes.push('Paired item missing length/rise (masked)');
+        if (fitCovAvg < 0.5) notes.push('Paired item missing silhouette/warmth (masked)');
       }
 
       // Certainty drops cleanly when measurements or fit tags are missing!
-      const measCount = ownedCat.filter(i => i.measurement).length;
       const pairFitCov = pairedItems.length
         ? pairedItems.reduce((a, p) => a + computeFitSubVector(p).coverage, 0) / pairedItems.length
         : 0.5;
-      const cert = Math.min(95, Math.max(20, Math.round(
-        22 + idealItems.length * 14 + (brandMatches.length ? 20 : 0) + measCount * 7 + pairFitCov * 16
+      const cert = Math.min(95, Math.max(22, Math.round(
+        26 + idealItems.length * 16 + (brandMatches.length ? 20 : 0) + pairFitCov * 16
       )));
 
       return { ...v, score: Math.max(15, Math.min(98, Math.round(score))), cert, note: notes[0] || 'Standard baseline match' };
@@ -4148,12 +4186,11 @@
             </div>
           `).join('')}
         </div>
-        <p class="text-[11px] text-blue-900 font-medium">${escapeHtml(measSummary)}.</p>
-        <p class="text-[11px] text-slate-500">Missing length/rise/measurement fields are masked out (never imputed as 0) and reflected in the Certainty bar.</p>
+        <p class="text-[11px] text-blue-900 font-medium">${escapeHtml(fitSummary)}.</p>
       </div>
     `;
 
-    const allSized = state.items.filter(i => i.status === 'owned' && (i.sizeLabel || i.measurement));
+    const allSized = state.items.filter(i => i.status === 'owned' && i.sizeLabel);
     document.getElementById('sizingTableWrap').innerHTML = allSized.length ? `
       <table class="w-full text-left border-collapse text-xs">
         <thead>
@@ -4161,7 +4198,6 @@
             <th class="py-2 pr-3 font-semibold">Piece</th>
             <th class="py-2 pr-3 font-semibold">Brand</th>
             <th class="py-2 pr-3 font-semibold">Size</th>
-            <th class="py-2 pr-3 font-semibold">Measurements</th>
             <th class="py-2 font-semibold">Fit Outcome</th>
           </tr>
         </thead>
@@ -4171,13 +4207,12 @@
               <td class="py-2.5 pr-3 font-medium text-slate-900">${escapeHtml(i.name)}</td>
               <td class="py-2.5 pr-3 text-slate-600">${escapeHtml(i.brand || '—')}</td>
               <td class="py-2.5 pr-3 font-semibold text-blue-800">${escapeHtml(i.sizeLabel || '—')}</td>
-              <td class="py-2.5 pr-3 text-slate-600">${escapeHtml(i.measurement || '—')}</td>
               <td class="py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${i.fitFeedback === 'perfect' ? 'bg-emerald-50 text-emerald-800' : i.fitFeedback === 'tight' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(i.fitFeedback || 'untested')}</span></td>
             </tr>
           `).join('')}
         </tbody>
       </table>
-    ` : `<p class="text-xs text-slate-500">Add sizes and measurements to your wardrobe items to build your Fit Envelope.</p>`;
+    ` : `<p class="text-xs text-slate-500">Add size labels and fit outcomes to your wardrobe items to build your Fit Envelope.</p>`;
   }
 
   // ---------- MODALS & IMAGE PROCESSING ----------
@@ -4203,6 +4238,7 @@
         <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-800">Silhouette: <strong>${escapeHtml(inf.silhouette)}</strong> (${c.silhouette}%)</span>
         <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-800">Rainproof: <strong>${inf.rain ? 'Yes' : 'No'}</strong> (${c.rain}%)</span>
       </div>
+      ${res.nudgeText ? `<p class="text-[10px] text-indigo-800 bg-indigo-50/80 border border-indigo-100 rounded px-2 py-1 mt-1"><strong>512-D Nudge Active:</strong> ${escapeHtml(res.nudgeText)}</p>` : ''}
       <p class="text-[10px] text-slate-500">Leave any dropdown below on "Auto / Unknown (CLIP)" to use these AI predictions, or override manually.</p>
     `;
   }
@@ -4238,10 +4274,7 @@
       document.getElementById('fRain').value = it.rain != null ? String(it.rain) : '';
       document.getElementById('fPrice').value = it.price || '';
       document.getElementById('fSizeLabel').value = it.sizeLabel || '';
-      document.getElementById('fMeasurement').value = it.measurement || '';
       document.getElementById('fFitFeedback').value = it.fitFeedback || 'untested';
-      document.getElementById('fFitLength').value = it.fitLength || '';
-      document.getElementById('fFitRise').value = it.fitRise || '';
       document.getElementById('fWearFreq').value = getItemWearFreq(it);
       const savedSeasons = Array.isArray(it.seasons) ? it.seasons : [];
       document.querySelectorAll('.f-season-cb').forEach(cb => { cb.checked = savedSeasons.includes(cb.value); });
@@ -4263,7 +4296,8 @@
           imageEmbedding512: it.clipImageEmbedding || it.clipEmbedding,
           inferred: it.clipInferred,
           confidences: it.clipConfidences || { category: 80, warmth: 75, formality: 75, silhouette: 75, rain: 75 },
-          avgConf: 76
+          avgConf: 76,
+          nudgeText: it.clipNudgeText || it.clipTextNote || ''
         };
         renderModalClipBox(pendingClipResult, null);
       }
@@ -4430,9 +4464,10 @@
 
     renderModalClipBox(null, runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on your garment photo...');
     try {
-      const txt = document.getElementById('fClipText').value.trim();
+      const nudge = buildAttributeNudgeText(getModalClipAttrs(), false);
       const w = Number(document.getElementById('fClipWeight').value) / 100;
-      const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), txt, w);
+      const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), nudge, w);
+      res.nudgeText = nudge;
       pendingClipResult = res;
       renderModalClipBox(res, null);
       const nameEl = document.getElementById('fName');
@@ -4471,7 +4506,7 @@
     processUploadedGarmentPhoto(pendingRawPhotoUrl, document.getElementById('fColorHex').value, false);
   });
 
-  document.getElementById('itemForm').addEventListener('submit', e => {
+  document.getElementById('itemForm').addEventListener('submit', async e => {
     e.preventDefault();
     const id = document.getElementById('fId').value || ('i' + Date.now());
     const existing = state.items.find(x => x.id === id);
@@ -4484,12 +4519,34 @@
     const rainRaw = document.getElementById('fRain').value;
 
     const keepOldClip = existing && !pendingPhotoChanged;
-    const clipEmb = pendingClipResult ? pendingClipResult.embedding512 : (keepOldClip ? existing.clipEmbedding : null);
-    const clipImgEmb = pendingClipResult ? (pendingClipResult.imageEmbedding512 || pendingClipResult.embedding512) : (keepOldClip ? (existing.clipImageEmbedding || existing.clipEmbedding) : null);
-    const clipInf = pendingClipResult ? pendingClipResult.inferred : (keepOldClip ? existing.clipInferred : null);
-    const clipConf = pendingClipResult ? pendingClipResult.confidences : (keepOldClip ? existing.clipConfidences : null);
+    let clipEmb = pendingClipResult ? pendingClipResult.embedding512 : (keepOldClip ? existing.clipEmbedding : null);
+    let clipImgEmb = pendingClipResult ? (pendingClipResult.imageEmbedding512 || pendingClipResult.embedding512) : (keepOldClip ? (existing.clipImageEmbedding || existing.clipEmbedding) : null);
+    let clipInf = pendingClipResult ? pendingClipResult.inferred : (keepOldClip ? existing.clipInferred : null);
+    let clipConf = pendingClipResult ? pendingClipResult.confidences : (keepOldClip ? existing.clipConfidences : null);
     const clipTextNote = document.getElementById('fClipText').value.trim();
     const clipTextWeight = Number(document.getElementById('fClipWeight').value);
+
+    const modalAttrs = getModalClipAttrs();
+    const desiredNudge = buildAttributeNudgeText(modalAttrs, !clipImgEmb && !(pendingPhotoDataUrl || (existing && existing.photo)));
+    let clipNudgeText = pendingClipResult ? (pendingClipResult.nudgeText || '') : (keepOldClip ? (existing.clipNudgeText || '') : '');
+    const prevWeight = existing && existing.clipTextWeight != null ? existing.clipTextWeight : 35;
+
+    // If CLIP is already loaded in memory and we have a base image vector (or text-only attributes),
+    // automatically re-blend on Save whenever attributes or text weight changed.
+    if (clipEngine.status === 'ready' && (clipImgEmb || desiredNudge) && (desiredNudge !== clipNudgeText || (existing && clipTextWeight !== prevWeight))) {
+      try {
+        const w = clipTextWeight / 100;
+        const txtVec = desiredNudge ? await encodeClipText(desiredNudge) : null;
+        const blended = blendEmbeddings512(clipImgEmb, txtVec, desiredNudge ? (clipImgEmb ? w : 1) : 0);
+        if (blended) {
+          const meta = inferAttributesFromEmbedding(clipEngine, blended);
+          clipEmb = blended;
+          clipInf = meta.inferred;
+          clipConf = meta.confidences;
+          clipNudgeText = desiredNudge;
+        }
+      } catch (_) {}
+    }
 
     const resolvedCategory = catRaw || (clipInf && clipInf.category) || 'top';
 
@@ -4510,16 +4567,17 @@
       wearFreq: document.getElementById('fWearFreq').value,
       seasons: Array.from(document.querySelectorAll('.f-season-cb:checked')).map(cb => cb.value),
       sizeLabel: document.getElementById('fSizeLabel').value.trim(),
-      measurement: document.getElementById('fMeasurement').value.trim(),
+      measurement: existing ? (existing.measurement || '') : '',
       fitFeedback: document.getElementById('fFitFeedback').value,
-      fitLength: document.getElementById('fFitLength').value,
-      fitRise: document.getElementById('fFitRise').value,
+      fitLength: '',
+      fitRise: '',
       photo: pendingPhotoDataUrl || (existing ? existing.photo : ''),
       clipEmbedding: clipEmb,
       clipImageEmbedding: clipImgEmb,
       clipInferred: clipInf,
       clipConfidences: clipConf,
       clipTextNote,
+      clipNudgeText,
       clipTextWeight
     };
 
@@ -5342,14 +5400,15 @@
   });
 
   document.getElementById('btnApplyItemClipNudge').addEventListener('click', async () => {
-    const txt = document.getElementById('fClipText').value.trim();
     const w = Number(document.getElementById('fClipWeight').value) / 100;
     const baseImgVec = pendingClipResult ? (pendingClipResult.imageEmbedding512 || pendingClipResult.embedding512) : null;
-    if (!txt && !baseImgVec && !pendingPhotoDataUrl) {
-      showToast('Upload a photo or enter a text description to compute a 512-D CLIP vector.');
+    const hasPhoto = Boolean(baseImgVec || pendingPhotoDataUrl);
+    const nudge = buildAttributeNudgeText(getModalClipAttrs(), !hasPhoto);
+    if (!nudge && !hasPhoto) {
+      showToast('Upload a photo or fill in fabric/attributes/text to compute a 512-D CLIP vector.');
       return;
     }
-    renderModalClipBox(null, 'Applying 512-D CLIP text refinement...');
+    renderModalClipBox(null, 'Applying 512-D CLIP attribute & text nudge...');
     try {
       const eng = await ensureClipLoaded(msg => renderModalClipBox(null, msg));
       let imgVec = baseImgVec;
@@ -5357,8 +5416,8 @@
         const imgRes = await analyzeImageWithClip(pendingPhotoDataUrl, msg => renderModalClipBox(null, msg));
         imgVec = imgRes.imageEmbedding512;
       }
-      const txtVec = txt ? await encodeClipText(txt, msg => renderModalClipBox(null, msg)) : null;
-      const blended = blendEmbeddings512(imgVec, txtVec, txt ? (imgVec ? w : 1) : 0);
+      const txtVec = nudge ? await encodeClipText(nudge, msg => renderModalClipBox(null, msg)) : null;
+      const blended = blendEmbeddings512(imgVec, txtVec, nudge ? (imgVec ? w : 1) : 0);
       const meta = inferAttributesFromEmbedding(eng, blended);
       pendingClipResult = {
         embedding512: blended,
@@ -5367,10 +5426,11 @@
         inferred: meta.inferred,
         confidences: meta.confidences,
         avgConf: meta.avgConf,
-        styleTags: meta.styleTags
+        styleTags: meta.styleTags,
+        nudgeText: nudge
       };
       renderModalClipBox(pendingClipResult, null);
-      showToast('Blended 512-D CLIP embedding updated!');
+      showToast('Blended 512-D CLIP embedding updated with attributes & text!');
     } catch (err) {
       renderModalClipBox(null, 'Could not run CLIP text encoder right now.');
     }
@@ -5624,8 +5684,6 @@
         const file = new File([blob], filename, { type: 'application/json' });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({
-            title: 'Atelier Index Closet Backup',
-            text: `${state.items.length} wardrobe & wishlist pieces with 512-D CLIP vectors.`,
             files: [file]
           });
           showToast('Shared closet JSON backup!');
@@ -5680,31 +5738,59 @@
 
   document.getElementById('btnBatchClip').addEventListener('click', async () => {
     const btn = document.getElementById('btnBatchClip');
-    const targets = state.items.filter(i => i.photo && !Array.isArray(i.clipEmbedding));
+    const targets = state.items.filter(i => i.photo || Array.isArray(i.clipImageEmbedding) || buildAttributeNudgeText(i, true));
     if (!targets.length) {
-      showToast('All items with photos already have 512-D CLIP vectors!');
+      showToast('Add a photo or garment attributes first to compute 512-D CLIP vectors.');
       return;
     }
     btn.disabled = true;
+    let photoEncoded = 0;
+    let textRefreshed = 0;
     try {
-      await ensureClipLoaded(msg => { btn.textContent = 'Loading CLIP...'; });
+      const eng = await ensureClipLoaded(() => { btn.textContent = 'Loading CLIP...'; });
       for (let idx = 0; idx < targets.length; idx++) {
         const it = targets[idx];
-        btn.textContent = `Embedding ${idx + 1}/${targets.length}...`;
-        const res = await analyzeImageWithClip(it.photo, null, it.clipTextNote || '', (it.clipTextWeight ?? 35) / 100);
-        it.clipEmbedding = res.embedding512;
-        it.clipImageEmbedding = res.imageEmbedding512;
-        it.clipInferred = res.inferred;
-        it.clipConfidences = res.confidences;
+        btn.textContent = `Updating ${idx + 1}/${targets.length}...`;
+        const w = (it.clipTextWeight ?? 35) / 100;
+        const hasCachedImg = Array.isArray(it.clipImageEmbedding) && it.clipImageEmbedding.length === 512;
+        const nudge = buildAttributeNudgeText(it, !it.photo && !hasCachedImg);
+
+        if (it.photo && !hasCachedImg) {
+          const res = await analyzeImageWithClip(it.photo, null, nudge, w);
+          it.clipEmbedding = res.embedding512;
+          it.clipImageEmbedding = res.imageEmbedding512;
+          it.clipInferred = res.inferred;
+          it.clipConfidences = res.confidences;
+          it.clipNudgeText = nudge;
+          photoEncoded++;
+        } else if (hasCachedImg) {
+          const txtVec = nudge ? await encodeClipText(nudge) : null;
+          const blended = blendEmbeddings512(it.clipImageEmbedding, txtVec, nudge ? w : 0);
+          const meta = inferAttributesFromEmbedding(eng, blended);
+          it.clipEmbedding = blended;
+          it.clipInferred = meta.inferred;
+          it.clipConfidences = meta.confidences;
+          it.clipNudgeText = nudge;
+          textRefreshed++;
+        } else if (nudge) {
+          const txtVec = await encodeClipText(nudge);
+          const meta = inferAttributesFromEmbedding(eng, txtVec);
+          it.clipEmbedding = txtVec;
+          it.clipImageEmbedding = null;
+          it.clipInferred = meta.inferred;
+          it.clipConfidences = meta.confidences;
+          it.clipNudgeText = nudge;
+          textRefreshed++;
+        }
       }
       saveState();
       renderAll();
-      showToast(`Embedded ${targets.length} photos with 512-D CLIP vectors!`);
+      showToast(`Updated CLIP for ${targets.length} items (${photoEncoded} photos embedded, ${textRefreshed} nudged with attributes)!`);
     } catch (err) {
-      showToast('Batch CLIP embedding failed—check internet access to HuggingFace/jsDelivr.');
+      showToast('Update CLIP failed—check internet access to HuggingFace/jsDelivr.');
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Batch Embed Photos (CLIP)';
+      btn.textContent = 'Update CLIP';
     }
   });
 
