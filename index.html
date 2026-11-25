@@ -5968,7 +5968,18 @@
 
       const R = redundancyCurve(twinCount) * (isClusterKeeper ? 0.40 : 1.0);
       const rainDamp = (Number(effAttr(it, 'rain', 0)) === 1 && freq !== 'never') ? 0.80 : 1.0;
-      const riskUnderuse = freq ? (U * S * rainDamp) : 0;
+
+      // Quality & Special-Occasion Protection: good, comfortable pieces worn "Rarely" (e.g. suits, statement pieces)
+      // should be KEPT rather than flagged solely for low wear frequency!
+      const isComfy = it.comfort === null || it.comfort === '' || Number(it.comfort) >= 3;
+      const itemForm = Number(effAttr(it, 'formality', 3));
+      let qualityDamp = 1.0;
+      if (freq === 'rare' && isComfy) {
+        if (ev.score >= 80 || (itemForm >= 4 && ev.score >= 68)) qualityDamp = 0.25;
+        else if (ev.score >= 72 || ev.strongPairs >= 2) qualityDamp = 0.45;
+      }
+
+      const riskUnderuse = freq ? (U * S * rainDamp * qualityDamp) : 0;
       const riskCrowd = R * (0.35 + 0.65 * U) * (0.65 + 0.35 * S);
 
       // Discomfort or orphan curve (season-independent)
@@ -5996,9 +6007,9 @@
         entry.reason = `Retire Risk ${retireRisk}% (≥ ${threshold}%): ${drivers.join(' · ')}.`;
         if (ev.certainty >= 50) highRetire.push(entry);
         else testFirst.push(entry);
-      } else if (!inSeason && (isLowUse || !freq)) {
+      } else if (!inSeason && (freq === 'never' || P > 0 || twinCount > 0 || retireRisk >= 30 || !freq)) {
         entry.reason = freq
-          ? `Retire Risk ${retireRisk}% (< ${threshold}%) — "${FREQ_LABELS[freq]}", but out of season (${nextS}). Re-check in ${nextS}.`
+          ? `Retire Risk ${retireRisk}% (< ${threshold}%) — "${FREQ_LABELS[freq]}", out of season (${nextS}). Re-check in ${nextS}.`
           : `Out-of-season ${nextS} piece with unset wear frequency—held until ${nextS}.`;
         seasonalHold.push(entry);
       } else if (inSeason && (!freq || ev.certainty < 50)) {
