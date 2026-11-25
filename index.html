@@ -2602,7 +2602,7 @@
   function computeOutfitClo(items) {
     const sumClo = items.reduce((acc, it) => acc + getItemClo(it), 0);
     const I_cl = 0.835 * sumClo + 0.161;
-    const T_clo = Math.max(15, Math.min(86, 82 - 27 * I_cl));
+    const T_clo = Math.max(12, Math.min(88, 84 - 36 * I_cl));
     return { sumClo, I_cl, T_clo };
   }
 
@@ -2992,7 +2992,7 @@
     const tPred = ridgeModel.predict(I_cl, outfitClipForThermal, T_clo);
     const T_ideal = Math.round(tPred.T_ideal);
     const tempDiff = Math.abs(temp - tPred.T_ideal);
-    let thermalScore = Math.max(15, Math.min(100, Math.round(100 - Math.max(0, tempDiff - 3) * 4.2)));
+    let thermalScore = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, tempDiff - 3) * 3.1)));
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
     const hasHeavyOuterwear = items.some(it => it.category === 'outerwear' && Number(effAttr(it, 'warmth', 3)) >= 4);
     if (weather === 'indoor') {
@@ -3007,7 +3007,7 @@
     const forms = items.map(it => Number(effAttr(it, 'formality', 3)));
     const avgF = forms.reduce((a, b) => a + b, 0) / forms.length;
     const spreadF = Math.max(...forms) - Math.min(...forms);
-    const formalityScore = Math.max(25, 100 - Math.abs(avgF - targetF) * 26 - Math.max(0, spreadF - 2) * 14);
+    const formalityScore = Math.max(5, 100 - Math.abs(avgF - targetF) * 28 - Math.max(0, spreadF - 2) * 14);
 
     // 3. Color & Silhouette Harmony (calibrated neutral baseline)
     const hsls = items.map(it => rgbToHsl(...hexToRgb(it.colorHex)));
@@ -3146,7 +3146,7 @@
       styleScore = Math.round(knnScore !== null ? (baseStyle * 0.55 + knnScore * 0.45) : baseStyle);
     }
     styleScore = Math.max(10, Math.min(99, styleScore));
-    const weatherScore = Math.max(15, Math.min(100, Math.round(thermalScore)));
+    const weatherScore = Math.max(5, Math.min(100, Math.round(thermalScore)));
     const comfortFinal = Math.max(15, Math.min(100, Math.round(comfortScore)));
     const finalScore = Math.round(styleScore * 0.50 + weatherScore * 0.30 + comfortFinal * 0.20);
 
@@ -4743,47 +4743,57 @@
     const seedShoes = seedByCat('shoes');
     const seedAccs = seedByCat('accessory');
 
-    const outers = seedOuters.length ? [null] : (outerList.length ? [null, ...outerList] : [null]);
+    // Sort pools by context relevance (warmth + formality) BEFORE capping so winter sweaters/thick pants are never sliced off!
+    const targetW = targetWarmthForTemp(ctx.temp, ctx.weather);
+    const targetForm = occasionTargetFormality(ctx.occasion);
+    const rankItemForCtx = it => {
+      const wDiff = Math.abs(Number(effAttr(it, 'warmth', 3)) - targetW);
+      const fDiff = Math.abs(Number(effAttr(it, 'formality', 3)) - targetForm);
+      const rainBonus = (ctx.weather === 'rain' && Number(effAttr(it, 'rain', 0)) === 1) ? -1.2 : 0;
+      return wDiff * 1.35 + fDiff * 0.85 + rainBonus;
+    };
+    const sortedOuterList = outerList.slice().sort((a, b) => rankItemForCtx(a) - rankItemForCtx(b));
+    const sortedTopList = topList.slice().sort((a, b) => rankItemForCtx(a) - rankItemForCtx(b));
+    const sortedBottomList = bottomList.slice().sort((a, b) => rankItemForCtx(a) - rankItemForCtx(b));
+    const sortedFullBodyList = fullBodyList.slice().sort((a, b) => rankItemForCtx(a) - rankItemForCtx(b));
+    const sortedShoeList = shoeList.slice().sort((a, b) => rankItemForCtx(a) - rankItemForCtx(b));
+
+    const outers = seedOuters.length ? [null] : (sortedOuterList.length ? (ctx.temp <= 45 ? [...sortedOuterList, null] : [null, ...sortedOuterList]) : [null]);
     let topCombos;
     if (seedFullBodies.length || seedTops.length >= 2) {
       topCombos = [[]];
     } else if (seedTops.length === 1) {
       topCombos = [[]];
-      if (ctx.temp <= 62 && topList.length) {
-        topList.slice(0, 4).forEach(t => topCombos.push([t]));
+      if (ctx.temp <= 62 && sortedTopList.length) {
+        sortedTopList.slice(0, 6).forEach(t => topCombos.push([t]));
       }
     } else {
-      topCombos = topList.length ? topList.map(t => [t]) : [[]];
-      if (ctx.temp <= 62 && topList.length >= 2) {
-        for (let i = 0; i < Math.min(4, topList.length); i++) {
-          for (let j = i + 1; j < Math.min(5, topList.length); j++) {
-            const w1 = Number(effAttr(topList[i], 'warmth', 2.5));
-            const w2 = Number(effAttr(topList[j], 'warmth', 2.5));
-            if (Math.min(w1, w2) <= 2 && Math.max(w1, w2) >= 2) topCombos.push([topList[i], topList[j]]);
-          }
-        }
+      const singles = sortedTopList.length ? sortedTopList.slice(0, 10).map(t => [t]) : [[]];
+      const layered = [];
+      if (ctx.temp <= 62 && sortedTopList.length >= 2) {
+        const baseTops = sortedTopList.filter(t => Number(effAttr(t, 'warmth', 2.5)) <= 2).slice(0, 4);
+        const midTops = sortedTopList.filter(t => Number(effAttr(t, 'warmth', 2.5)) >= 3).slice(0, 4);
+        baseTops.forEach(b => midTops.forEach(m => { if (b.id !== m.id) layered.push([b, m]); }));
       }
+      // Put layered combos first in cold weather so capPool NEVER drops them!
+      topCombos = ctx.temp <= 48 ? [...layered.slice(0, 8), ...singles] : [...singles, ...layered.slice(0, 6)];
     }
-    const bottoms = (seedFullBodies.length || seedBottoms.length) ? [null] : (bottomList.length ? bottomList : [null]);
-    const shoes = seedShoes.length ? [null] : (shoeList.length ? shoeList : [null]);
+    const bottoms = (seedFullBodies.length || seedBottoms.length) ? [null] : (sortedBottomList.length ? sortedBottomList : [null]);
+    const shoes = seedShoes.length ? [null] : (sortedShoeList.length ? sortedShoeList : [null]);
 
     const missingCats = [];
     if (!topList.length && !seedTops.length && !fullBodyList.length && !seedFullBodies.length) missingCats.push('top');
     if (!bottomList.length && !seedBottoms.length && !fullBodyList.length && !seedFullBodies.length) missingCats.push('bottom');
     if (!shoeList.length && !seedShoes.length) missingCats.push('shoes');
 
-    // Precompute Ridge & preference models ONCE for the entire generation pass (10x+ speedup)
-    const precomputed = {
-      pref512: buildClipPreferenceSpace(),
-      ridgeModel: buildDualRidgeThermalModel(),
-      aesRidgeModel: buildDualRidgeAestheticModel()
-    };
+    // Use cached precomputed models (exact Cholesky) for instant, consistent scoring
+    const precomputed = makePrecomputedModels();
 
     const capPool = (arr, limit) => arr.length <= limit ? arr : arr.slice(0, limit);
     const outersCapped = capPool(outers, 7);
-    const topCombosCapped = capPool(topCombos, 10);
-    const bottomsCapped = capPool(bottoms, 7);
-    const fullBodyCapped = capPool(fullBodyList, 6);
+    const topCombosCapped = capPool(topCombos, 14);
+    const bottomsCapped = capPool(bottoms, 8);
+    const fullBodyCapped = capPool(sortedFullBodyList, 6);
     const shoesCapped = capPool(shoes, 6);
 
     // Stage 1: Score Core Outfits (both Top+Bottom combos and Full-Body combos!)
@@ -4838,14 +4848,18 @@
       }));
     };
 
-    // Stage 2: Combine top 35 by Score + top 35 by High-Score/Low-Certainty so experimental combos are never pruned out
+    // Stage 2: Combine top 35 by Score + top 35 by Weather + top 30 by Formality-matched Experimental
+    // so warm winter coats & casual staples are NEVER pruned out before mode ranking!
+    const byWeatherPrior = coreCandidates
+      .slice()
+      .sort((a, b) => ((b.ev.weatherScore ?? 0) - (a.ev.weatherScore ?? 0)) || (b.ev.score - a.ev.score));
     const byExpPrior = coreCandidates
-      .filter(c => c.ev.score >= 58)
+      .filter(c => (c.ev.weatherScore ?? 0) >= 45 || c.ev.score >= 55)
       .slice()
       .sort((a, b) => (b.ev.score * (1.15 - b.ev.certainty / 100)) - (a.ev.score * (1.15 - a.ev.certainty / 100)));
     const mergedPool = [];
     const seenMerged = new Set();
-    [...coreCandidates.slice(0, 35), ...byExpPrior.slice(0, 35)].forEach(c => {
+    [...coreCandidates.slice(0, 35), ...byWeatherPrior.slice(0, 35), ...byExpPrior.slice(0, 30)].forEach(c => {
       const k = c.items.map(x => x.id).sort().join('|');
       if (!seenMerged.has(k)) { seenMerged.add(k); mergedPool.push(c); }
     });
@@ -4868,17 +4882,21 @@
       const hasUntestedPiece = best.items.some(it => itemCompleteness(it) < 0.65 || getItemWearFreq(it) === '');
       const stScore = best.ev.styleScore ?? best.ev.score;
       const wxScore = best.ev.weatherScore ?? (best.ev.breakdown.thermal || 60);
-      // Higher temperature/weather weight across all modes + steep penalty for severe thermal mismatch
-      const wxMismatchPenalty = wxScore < 45 ? (45 - wxScore) * 0.55 : 0;
-      const contextScore = stScore * 0.55 + wxScore * 0.45 - wxMismatchPenalty;
-      const isExperimental = (best.ev.certainty <= 78 || hasUntestedPiece) && stScore >= 55 && wxScore >= 45;
-      const expScore = (stScore >= 55 && wxScore >= 45)
+      const targetF = occasionTargetFormality(ctx.occasion);
+      const avgF = best.items.reduce((acc, it) => acc + Number(effAttr(it, 'formality', 3)), 0) / Math.max(1, best.items.length);
+      const formGap = Math.abs(avgF - targetF);
+      // Context gates: prevent high-rated formal/heavy outfits from dominating mismatched formality or temperature
+      const formMismatchPenalty = formGap > 1.2 ? (formGap - 1.2) * 22 : 0;
+      const wxMismatchPenalty = wxScore < 60 ? (60 - wxScore) * 0.85 : 0;
+      const contextScore = stScore * 0.52 + wxScore * 0.48 - wxMismatchPenalty - formMismatchPenalty;
+      const isExperimental = (best.ev.certainty <= 78 || hasUntestedPiece) && stScore >= 55 && wxScore >= 55 && formGap <= 1.5;
+      const expScore = (stScore >= 55 && wxScore >= 55 && formGap <= 1.5)
         ? (contextScore * 0.58 + (100 - best.ev.certainty) * 0.42)
-        : (contextScore * 0.5);
+        : (contextScore * 0.45);
       const stapleScore = contextScore * 0.72 + best.ev.certainty * 0.28;
-      const underwornScore = contextScore * 0.65 + underwornCount * 16;
-      // Best for Weather stays 70% Weather / 30% Style
-      const weatherScore = wxScore * 0.70 + stScore * 0.30;
+      const underwornScore = contextScore * 0.75 + Math.min(2, underwornCount) * 10;
+      // Best for Weather respects formality gate too while prioritizing 70% Weather / 30% Style
+      const weatherScore = wxScore * 0.70 + stScore * 0.30 - formMismatchPenalty * 0.75;
       return { ...best, underwornCount, novelty, isExperimental, expScore, stapleScore, underwornScore, weatherScore };
     });
 
