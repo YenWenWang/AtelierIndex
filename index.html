@@ -1431,6 +1431,19 @@
     { clo: 0.00, text: 'leather belt, handbag, tote bag, sunglasses, watch, or jewelry accessory' }
   ];
 
+  // Zero-shot garment length & accessory thermal prompts for Two-Zone (Upper / Lower) thermal modeling
+  const CLIP_LENGTH_PROMPTS = [
+    { lowerFrac: 0.05, fbLower: 0.35, text: 'short cropped waist-length jacket blazer bomber or mini dress above hips' },
+    { lowerFrac: 0.22, fbLower: 0.48, text: 'mid-thigh length parka field jacket peacoat or knee-length dress' },
+    { lowerFrac: 0.36, fbLower: 0.55, text: 'long knee-length or ankle-length wool overcoat trench coat maxi dress or full jumpsuit' }
+  ];
+
+  const CLIP_ACC_THERMAL_PROMPTS = [
+    { zone: 'upper', text: 'warm winter wool scarf cashmere neck warmer knit beanie hat or winter gloves' },
+    { zone: 'lower', text: 'thick wool thermal socks tights leggings or leg warmers' },
+    { zone: 'none', text: 'leather handbag tote backpack belt silk necktie jewelry sunglasses watch or thin bandana' }
+  ];
+
   const clipEngine = {
     status: 'idle', // idle | loading | ready | error
     loadingPromise: null,
@@ -1572,12 +1585,30 @@
           l2Normalize(cloEmbeds.data.slice(i * cDim, (i + 1) * cDim))
         );
 
+        const lenTexts = CLIP_LENGTH_PROMPTS.map(p => p.text);
+        const lenInputs = tokenizer(lenTexts, tokOpts);
+        const { text_embeds: lenEmbeds } = await textModel(lenInputs);
+        const lDim = lenEmbeds.dims[lenEmbeds.dims.length - 1];
+        clipEngine.lengthPromptEmbeddings = lenTexts.map((_, i) =>
+          l2Normalize(Array.from(lenEmbeds.data.slice(i * lDim, (i + 1) * lDim)))
+        );
+
+        const accTTexts = CLIP_ACC_THERMAL_PROMPTS.map(p => p.text);
+        const accTInputs = tokenizer(accTTexts, tokOpts);
+        const { text_embeds: accTEmbeds } = await textModel(accTInputs);
+        const aDim = accTEmbeds.dims[accTEmbeds.dims.length - 1];
+        clipEngine.accThermalPromptEmbeddings = accTTexts.map((_, i) =>
+          l2Normalize(Array.from(accTEmbeds.data.slice(i * aDim, (i + 1) * aDim)))
+        );
+
         // Cache encoded prompt metadata in IndexedDB so Gap Analysis can run instantly on future visits without waiting for ONNX
-        idbPutKey(`prompt_meta_v3_${loadedModelId}`, {
+        idbPutKey(`prompt_meta_v4_${loadedModelId}`, {
           activeModelId: loadedModelId,
           promptEmbeddings: clipEngine.promptEmbeddings,
           styleProbeEmbeddings: clipEngine.styleProbeEmbeddings,
-          cloPromptEmbeddings: clipEngine.cloPromptEmbeddings
+          cloPromptEmbeddings: clipEngine.cloPromptEmbeddings,
+          lengthPromptEmbeddings: clipEngine.lengthPromptEmbeddings,
+          accThermalPromptEmbeddings: clipEngine.accThermalPromptEmbeddings
         });
 
         updateClipUI('ready', loadedModelId === CLIP_MODEL_ID ? 'FashionCLIP Ready' : 'CLIP-ViT-B/32 Ready');
@@ -2572,12 +2603,80 @@
     return tbl[Math.max(0, Math.min(4, Math.round(fallbackW) - 1))];
   }
 
-  // Empirical ASHRAE 55 / ISO 9920 outfit insulation stacking: I_cl = 0.835 * sum(clo) + 0.161
+  // Infer per-garment Upper vs. Lower thermal coverage split (handles short vs. long coats, full-body, & non-thermal accessories)
+  function getItemZoneSplit(item) {
+    const cat = effAttr(item, 'category', item.category) || 'top';
+    const nameL = String(item.name || '').toLowerCase();
+    const hasClip = Array.isArray(item.clipEmbedding) && item.clipEmbedding.length === 512;
+
+    if (cat === 'top') return { upperW: 1.0, lowerW: 0.0, thermalMult: 1.0 };
+    if (cat === 'bottom' || cat === 'shoes') return { upperW: 0.0, lowerW: 1.0, thermalMult: 1.0 };
+
+    if (cat === 'accessory') {
+      if (/(tie|necktie|belt|bag|tote|backpack|messenger|watch|sunglass|ring|necklace|bracelet|bandana|wallet|clutch)/i.test(nameL)) {
+        return { upperW: 0.0, lowerW: 0.0, thermalMult: 0.0 };
+      }
+      if (/(scarf|beanie|hat|cap|glove|mitten|earmuff|balaclava|shawl)/i.test(nameL)) {
+        return { upperW: 1.0, lowerW: 0.0, thermalMult: 1.0 };
+      }
+      if (/(sock|tights|legging|warmer)/i.test(nameL)) {
+        return { upperW: 0.0, lowerW: 1.0, thermalMult: 1.0 };
+      }
+      if (hasClip && clipEngine.accThermalPromptEmbeddings && clipEngine.accThermalPromptEmbeddings.length === 3) {
+        const sims = clipEngine.accThermalPromptEmbeddings.map(v => cosineSimilarity(item.clipEmbedding, v));
+        const probs = softmax(sims, 0.035);
+        const mult = probs[0] + probs[1];
+        if (mult < 0.25) return { upperW: 0.0, lowerW: 0.0, thermalMult: 0.0 };
+        return { upperW: probs[0] / mult, lowerW: probs[1] / mult, thermalMult: mult };
+      }
+      return { upperW: 0.0, lowerW: 0.0, thermalMult: 0.0 };
+    }
+
+    if (cat === 'outerwear' || cat === 'fullbody') {
+      let lowerW = cat === 'fullbody' ? 0.50 : 0.10;
+      if (hasClip && clipEngine.lengthPromptEmbeddings && clipEngine.lengthPromptEmbeddings.length === CLIP_LENGTH_PROMPTS.length) {
+        const sims = clipEngine.lengthPromptEmbeddings.map(v => cosineSimilarity(item.clipEmbedding, v));
+        const probs = softmax(sims, 0.035);
+        lowerW = 0;
+        for (let i = 0; i < CLIP_LENGTH_PROMPTS.length; i++) {
+          lowerW += probs[i] * (cat === 'fullbody' ? CLIP_LENGTH_PROMPTS[i].fbLower : CLIP_LENGTH_PROMPTS[i].lowerFrac);
+        }
+      } else if (cat === 'outerwear') {
+        if (/(overcoat|trench|duffle|maxi|longline|cape|duster)/i.test(nameL)) lowerW = 0.35;
+        else if (/(parka|field|peacoat|anorak)/i.test(nameL)) lowerW = 0.22;
+        else lowerW = 0.08;
+      } else if (/(mini)/i.test(nameL)) {
+        lowerW = 0.35;
+      }
+      return { upperW: 1 - lowerW, lowerW, thermalMult: 1.0 };
+    }
+
+    return { upperW: 0.5, lowerW: 0.5, thermalMult: 1.0 };
+  }
+
+  // Two-Zone ASHRAE 55 / ISO 9920 outfit insulation stacking (whole-body + Upper & Lower local zones)
   function computeOutfitClo(items) {
-    const sumClo = items.reduce((acc, it) => acc + getItemClo(it), 0);
+    let sumClo = 0, sumUpper = 0, sumLower = 0;
+    let hasUpper = false, hasLower = false;
+    items.forEach(it => {
+      const split = getItemZoneSplit(it);
+      if (split.thermalMult <= 0.01) return;
+      const c = getItemClo(it) * split.thermalMult;
+      sumClo += c;
+      sumUpper += c * split.upperW;
+      sumLower += c * split.lowerW;
+      const cat = effAttr(it, 'category', it.category);
+      if (cat === 'top' || cat === 'outerwear' || cat === 'fullbody') hasUpper = true;
+      if (cat === 'bottom' || cat === 'fullbody') hasLower = true;
+    });
     const I_cl = 0.835 * sumClo + 0.161;
     const T_clo = Math.max(12, Math.min(88, 84 - 36 * I_cl));
-    return { sumClo, I_cl, T_clo };
+    // Normalize Upper (62% of balanced outfit clo) and Lower (38% of balanced outfit clo) to full-body equivalent
+    const I_upper_eq = 0.835 * (sumUpper / 0.62) + 0.161;
+    const I_lower_eq = 0.835 * (sumLower / 0.38) + 0.161;
+    const T_upper_clo = Math.max(12, Math.min(88, 84 - 36 * I_upper_eq));
+    const T_lower_clo = Math.max(12, Math.min(88, 84 - 36 * I_lower_eq));
+    return { sumClo, I_cl, T_clo, T_upper_clo, T_lower_clo, hasUpper, hasLower };
   }
 
   // Gaussian elimination with partial pivoting for SPD (K + lambda*I) * alpha = y
@@ -2959,14 +3058,24 @@
     }
     const { temp = 58, weather = 'clear', occasion = 'casual' } = context || {};
 
-    // 1. ASHRAE 55 clo Physics Prior + Dual Ridge Thermal Prediction (no wind double-counting!)
-    const { I_cl, T_clo } = computeOutfitClo(items);
+    // 1. Two-Zone (Upper / Lower) ASHRAE 55 clo Physics Prior + Dual Ridge Thermal Prediction
+    const { I_cl, T_clo, T_upper_clo, T_lower_clo, hasUpper, hasLower } = computeOutfitClo(items);
     const outfitClipForThermal = computeOutfitClipEmbedding(items);
     const ridgeModel = (precomputed && precomputed.ridgeModel) || buildDualRidgeThermalModel();
     const tPred = ridgeModel.predict(I_cl, outfitClipForThermal, T_clo);
     const T_ideal = Math.round(tPred.T_ideal);
+    const T_ideal_upper = Math.max(12, Math.min(90, T_upper_clo + tPred.deltaT));
+    const T_ideal_lower = Math.max(12, Math.min(90, T_lower_clo + tPred.deltaT));
     const tempDiff = Math.abs(temp - tPred.T_ideal);
     let thermalScore = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, tempDiff - 3) * 3.1)));
+    let zoneImbalance = 0;
+    if (hasUpper && hasLower) {
+      const sUp = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, Math.abs(temp - T_ideal_upper) - 3) * 3.1)));
+      const sLow = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, Math.abs(temp - T_ideal_lower) - 3) * 3.1)));
+      zoneImbalance = Math.round(Math.abs(T_ideal_upper - T_ideal_lower));
+      const imbPenalty = zoneImbalance > 18 ? Math.round((zoneImbalance - 18) * 0.65) : 0;
+      thermalScore = Math.max(5, Math.min(100, Math.round(0.65 * Math.min(sUp, sLow) + 0.35 * ((sUp + sLow) / 2) - imbPenalty)));
+    }
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
     const hasHeavyOuterwear = items.some(it => it.category === 'outerwear' && Number(effAttr(it, 'warmth', 3)) >= 4);
     if (weather === 'indoor') {
@@ -3140,13 +3249,17 @@
     // 7. Explainable Reasons
     const reasons = [];
     const ridgeNote = ridgeModel.n > 0 ? `, Dual Ridge ${tPred.deltaT >= 0 ? '+' : ''}${Math.round(tPred.deltaT)}°F` : '';
-    const sweetSpotStr = `Sweet spot ${T_ideal}°F (${I_cl.toFixed(2)} clo → ${Math.round(T_clo)}°F${ridgeNote})`;
+    const zoneStr = (hasUpper && hasLower) ? ` · Upper ~${Math.round(T_ideal_upper)}°F / Lower ~${Math.round(T_ideal_lower)}°F` : '';
+    const sweetSpotStr = `Sweet spot ${T_ideal}°F${zoneStr} (${I_cl.toFixed(2)} clo → ${Math.round(T_clo)}°F${ridgeNote})`;
     if (weather === 'indoor' && hasHeavyOuterwear) reasons.push(`Heavy outerwear isn't ideal for indoor wear (${temp}°F). ${sweetSpotStr}.`);
     else if (weather === 'indoor' && thermalScore >= 82) reasons.push(`Indoor (${temp}°F) · ${sweetSpotStr} — comfortable indoors.`);
     else if (weather === 'rain' && !hasRainGear) reasons.push(`No weatherproof layer for rain at ${temp}°F. ${sweetSpotStr}.`);
     else if (thermalScore >= 82) reasons.push(`${sweetSpotStr} — matches ${temp}°F well.`);
     else if (temp < tPred.T_ideal) reasons.push(`${sweetSpotStr} — may feel cool at ${temp}°F; add a warmer layer.`);
     else reasons.push(`${sweetSpotStr} — may feel warm at ${temp}°F; try a lighter layer.`);
+    if (hasUpper && hasLower && zoneImbalance > 18) {
+      reasons.push(`Upper/lower warmth imbalance (${zoneImbalance}°F gap: Upper ~${Math.round(T_ideal_upper)}°F vs. Lower ~${Math.round(T_ideal_lower)}°F).`);
+    }
 
     if (minComfort <= 2) reasons.push(`Dragged down by a low-comfort piece (${items.find(i => i.comfort <= 2).name}).`);
     else if (comfortScore >= 88) reasons.push(`High physical comfort across all pieces.`);
@@ -5301,13 +5414,15 @@
   async function tryLoadCachedGapEngines() {
     for (const modelId of [CLIP_MODEL_ID, CLIP_FALLBACK_MODEL_ID]) {
       const bankKey = `decode_banks_v3_${modelId}_${CLIP_DECODE_TYPES.length}_${CLIP_DECODE_COLORS.length}_${CLIP_DECODE_FABRICS.length}_${CLIP_DECODE_PATTERNS.length}`;
-      const metaKey = `prompt_meta_v3_${modelId}`;
+      const metaKey = `prompt_meta_v4_${modelId}`;
       const [banks, meta] = await Promise.all([idbGetKey(bankKey), idbGetKey(metaKey)]);
       if (banks && Array.isArray(banks.typeVecs) && banks.typeVecs.length === CLIP_DECODE_TYPES.length && Array.isArray(banks.patternVecs) && meta && meta.promptEmbeddings) {
         clipEngine.decodeBanks = banks;
         if (!clipEngine.promptEmbeddings) clipEngine.promptEmbeddings = meta.promptEmbeddings;
         if (!clipEngine.styleProbeEmbeddings) clipEngine.styleProbeEmbeddings = meta.styleProbeEmbeddings;
         if (!clipEngine.cloPromptEmbeddings) clipEngine.cloPromptEmbeddings = meta.cloPromptEmbeddings;
+        if (!clipEngine.lengthPromptEmbeddings && meta.lengthPromptEmbeddings) clipEngine.lengthPromptEmbeddings = meta.lengthPromptEmbeddings;
+        if (!clipEngine.accThermalPromptEmbeddings && meta.accThermalPromptEmbeddings) clipEngine.accThermalPromptEmbeddings = meta.accThermalPromptEmbeddings;
         return { eng: clipEngine, banks };
       }
     }
