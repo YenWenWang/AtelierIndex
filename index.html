@@ -670,7 +670,7 @@
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 class="text-sm font-bold text-slate-900">Saved Inspo Log <span id="inspoLogCount" class="ml-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 text-[11px] font-semibold">0</span></h3>
-          <p class="text-xs text-slate-500">Saved inspos act as high-noise soft taste priors (<code>&lambda; = 2.5</code> vs. <code>0.4</code> for worn outfits)&mdash;they gently steer Gap Analysis toward new garment types while keeping certainty honestly low until you try them on.</p>
+          <p class="text-xs text-slate-500">Saved inspos run as a <strong>two-stage orthogonal residual prior</strong> (<code>&lambda; = 1.25</code>): directions already tested in your wear logs are projected out by wear certainty, so inspos only steer unexplored styles while certainty stays strictly wear-only (<code>c<sub>wear</sub></code>).</p>
         </div>
       </div>
       <div id="inspoLogList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
@@ -2937,7 +2937,13 @@
       }
     });
 
-    // Saved Inspo Logs: soft aspirational taste priors with high noise (lambda = 2.5 -> untested fit, low certainty)
+    return samples;
+  }
+
+  function collectInspoSamples() {
+    const out = [];
+    const PRIOR_MEAN = 65;
+    const closetMean = computeClosetClipMean();
     (state.inspoLogs || []).forEach(ins => {
       const embSlots = (ins.slots || []).filter(sl => Array.isArray(sl.clipEmbedding) && sl.clipEmbedding.length === 512);
       const recencyW = getLogRecencyWeight(ins.date);
@@ -2952,22 +2958,123 @@
         vMean = centerClipVec(ins.wholeClipEmbedding, closetMean);
       }
       if (vMean) {
-        samples.push({ vMean, hPair, occ, residual: 88 - PRIOR_MEAN, recencyW, lambda: 2.50, isInspo: true });
+        out.push({ vMean, hPair, occ, residual: 88 - PRIOR_MEAN, recencyW });
       }
     });
-    return samples;
+    return out;
+  }
+
+  // Stage 2: Fit tiny m x m Orthogonal Inspo Residual Ridge model on ONLY the directions orthogonal to high-certainty wear logs
+  function fitOrthogonalInspoStage(wearSamples, wearLflat, inspoRaw) {
+    if (!inspoRaw || !inspoRaw.length) return null;
+    const nWear = wearSamples.length;
+
+    function buildOrthoBasis(vecs, maxDim) {
+      const basis = [];
+      for (let i = 0; i < vecs.length && basis.length < maxDim; i++) {
+        const v = vecs[i];
+        if (!v) continue;
+        const u = v.slice();
+        for (let b = 0; b < basis.length; b++) {
+          let dot = 0;
+          for (let d = 0; d < 512; d++) dot += u[d] * basis[b][d];
+          for (let d = 0; d < 512; d++) u[d] -= dot * basis[b][d];
+        }
+        const nrm = Math.sqrt(u.reduce((s, x) => s + x * x, 0));
+        if (nrm > 1e-3) {
+          for (let d = 0; d < 512; d++) u[d] /= nrm;
+          basis.push(u);
+        }
+      }
+      return basis;
+    }
+
+    function dampParallel(vec, basis, strength) {
+      if (!vec || !basis.length || strength <= 1e-4) return vec;
+      const out = vec.slice();
+      for (let b = 0; b < basis.length; b++) {
+        let dot = 0;
+        for (let d = 0; d < 512; d++) dot += vec[d] * basis[b][d];
+        for (let d = 0; d < 512; d++) out[d] -= strength * dot * basis[b][d];
+      }
+      return l2Normalize(out);
+    }
+
+    const wearVBasis = buildOrthoBasis(wearSamples.map(s => s.vMean), 64);
+    const wearHBasis = buildOrthoBasis(wearSamples.map(s => s.hPair).filter(Boolean), 64);
+
+    // Filter each saved inspo by Stage 1 wear certainty: remove cWear * v_parallel, keep orthogonal residual
+    const filtered = [];
+    inspoRaw.forEach(ins => {
+      let cWear = 0;
+      if (nWear > 0) {
+        const kW = wearSamples.map(s => aestheticKernel(ins.vMean, ins.hPair, ins.occ, s.vMean, s.hPair, s.occ));
+        const zW = choleskyForwardFlat(wearLflat, nWear, kW);
+        for (let i = 0; i < nWear; i++) cWear += zW[i] * zW[i];
+        cWear = Math.max(0, Math.min(1, cWear));
+      }
+      const novelty = Math.max(0, 1 - cWear);
+      if (novelty < 0.05) return; // Already thoroughly tested in wear logs -> retire inspo prior automatically
+      const vPerp = dampParallel(ins.vMean, wearVBasis, cWear);
+      const hPerp = ins.hPair ? dampParallel(ins.hPair, wearHBasis, cWear) : null;
+      filtered.push({
+        vMean: vPerp,
+        hPair: hPerp,
+        occ: ins.occ,
+        residual: ins.residual * novelty,
+        recencyW: ins.recencyW
+      });
+    });
+
+    const m = filtered.length;
+    if (!m) return null;
+    const lamInspo = 1.25;
+    const Km = Array.from({ length: m }, () => new Array(m).fill(0));
+    const ym = filtered.map(s => s.residual);
+    for (let i = 0; i < m; i++) {
+      for (let j = i; j < m; j++) {
+        const val = aestheticKernel(filtered[i].vMean, filtered[i].hPair, filtered[i].occ, filtered[j].vMean, filtered[j].hPair, filtered[j].occ);
+        Km[i][j] = val;
+        Km[j][i] = val;
+      }
+      Km[i][i] += lamInspo / Math.max(0.15, filtered[i].recencyW);
+    }
+    const Lm = choleskyDecompose(Km);
+    const LmFlat = new Float64Array(m * m);
+    for (let i = 0; i < m; i++) LmFlat.set(Lm[i], i * m);
+    const alphaM = choleskySolveFlat(LmFlat, m, ym);
+
+    return {
+      m,
+      samples: filtered,
+      alpha: alphaM,
+      predictDelta(vMean, hPair, occ, cWear) {
+        const novelty = Math.max(0, 1 - (cWear || 0));
+        if (novelty < 0.02 || !vMean) return 0;
+        let d = 0;
+        for (let i = 0; i < m; i++) {
+          d += alphaM[i] * aestheticKernel(vMean, hPair, occ, filtered[i].vMean, filtered[i].hPair, filtered[i].occ);
+        }
+        return d * novelty;
+      }
+    };
   }
 
   function wrapAestheticRidgeModel(samples, alpha, Lflat) {
     const n = samples.length;
     const PRIOR_MEAN = 65;
-    if (!n) return { n: 0, samples: [], alpha: [], solveK: () => [], quadForm: () => 0, predict: () => ({ score: null, cert: 0 }) };
+    const inspoStage = fitOrthogonalInspoStage(samples, Lflat, collectInspoSamples());
+    if (!n && !inspoStage) {
+      return { n: 0, samples: [], alpha: [], inspoStage: null, solveK: () => [], quadForm: () => 0, predict: () => ({ score: null, cert: 0 }) };
+    }
     return {
       n,
       samples,
       alpha,
-      solveK(b) { return choleskySolveFlat(Lflat, n, b); },
+      inspoStage,
+      solveK(b) { return n ? choleskySolveFlat(Lflat, n, b) : []; },
       quadForm(b) {
+        if (!n) return 0;
         const z = choleskyForwardFlat(Lflat, n, b);
         let s = 0;
         for (let i = 0; i < n; i++) s += z[i] * z[i];
@@ -2975,16 +3082,20 @@
       },
       predict(vMean, hPair, occ) {
         if (!vMean) return { score: null, cert: 0 };
-        const kStar = samples.map(s => aestheticKernel(vMean, hPair, occ, s.vMean, s.hPair, s.occ));
-        let delta = 0;
-        for (let i = 0; i < n; i++) delta += alpha[i] * kStar[i];
-        const predScore = Math.round(Math.max(12, Math.min(98, PRIOR_MEAN + delta)));
-
-        const z = choleskyForwardFlat(Lflat, n, kStar);
-        let explained = 0;
-        for (let i = 0; i < n; i++) explained += z[i] * z[i];
-        const cert = Math.max(0, Math.min(1, explained));
-        return { score: predScore, cert };
+        let deltaWear = 0;
+        let cWear = 0;
+        if (n > 0) {
+          const kStar = samples.map(s => aestheticKernel(vMean, hPair, occ, s.vMean, s.hPair, s.occ));
+          for (let i = 0; i < n; i++) deltaWear += alpha[i] * kStar[i];
+          const z = choleskyForwardFlat(Lflat, n, kStar);
+          let explained = 0;
+          for (let i = 0; i < n; i++) explained += z[i] * z[i];
+          cWear = Math.max(0, Math.min(1, explained));
+        }
+        // Stage 2: Orthogonal Inspo Residual boosts unexplored directions ONLY; final certainty stays strictly c_wear!
+        const deltaInspo = inspoStage ? inspoStage.predictDelta(vMean, hPair, occ, cWear) : 0;
+        const predScore = Math.round(Math.max(12, Math.min(98, PRIOR_MEAN + deltaWear + deltaInspo)));
+        return { score: predScore, cert: cWear };
       }
     };
   }
@@ -5531,14 +5642,23 @@
     const silVecsC = centerBankVecs(banks.silVecs);
     const patternVecsC = centerBankVecs(banks.patternVecs || []);
 
-    // Pure Dual Ridge GP posterior scoring for any centered 512-D candidate vector
+    // Pure Dual Ridge GP posterior scoring (Stage 1 wear certainty + Stage 2 orthogonal inspo residual boost)
     function dualRidgePosterior(vCentered) {
-      if (ridge.n === 0) return { mu: 0, sigma: 1, acq: 0 };
-      const kVec = ridge.samples.map(s => Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vCentered, s.vMean))));
-      let muVal = 0;
-      for (let i = 0; i < ridge.n; i++) muVal += ridge.alpha[i] * kVec[i];
-      const explained = ridge.quadForm(kVec);
-      const sigma = Math.sqrt(Math.max(0.02, 1 - Math.max(0, Math.min(0.999, explained))));
+      let muVal = 0, explained = 0;
+      if (ridge.n > 0) {
+        const kVec = ridge.samples.map(s => Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vCentered, s.vMean))));
+        for (let i = 0; i < ridge.n; i++) muVal += ridge.alpha[i] * kVec[i];
+        explained = ridge.quadForm(kVec);
+      }
+      const cWear = Math.max(0, Math.min(0.999, explained));
+      if (ridge.inspoStage && ridge.inspoStage.m > 0) {
+        const novelty = 1 - cWear;
+        for (let i = 0; i < ridge.inspoStage.m; i++) {
+          const ki = Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vCentered, ridge.inspoStage.samples[i].vMean)));
+          muVal += ridge.inspoStage.alpha[i] * ki * novelty;
+        }
+      }
+      const sigma = Math.sqrt(Math.max(0.02, 1 - cWear));
       const muNorm = muVal / 35;
       const acq = muNorm + certBeta * sigma;
       return { mu: muNorm, sigma, acq };
@@ -6406,7 +6526,7 @@
     if (titleInput) titleInput.value = '';
     saveState();
     renderInspoLogList();
-    showToast(`Saved "${customTitle || autoTitle}" to Inspo Log as a soft taste prior (λ=2.5)!`);
+    showToast(`Saved "${customTitle || autoTitle}" to Inspo Log (orthogonal residual prior)!`);
   }
 
   function renderInspoLogList() {
@@ -6431,7 +6551,7 @@
                 <button type="button" data-del-inspo="${ins.id}" class="del-inspo-btn text-[11px] font-semibold text-rose-600 hover:text-rose-800 shrink-0">Delete</button>
               </div>
               <div class="flex flex-wrap items-center gap-1.5 text-[10px]">
-                <span class="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 font-semibold">Soft Prior &middot; &lambda;=2.5</span>
+                <span class="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 font-semibold">Orthogonal Prior &middot; &lambda;=1.25</span>
                 <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">${escapeHtml(formatOccasionLabel(ins.occasion))}</span>
                 <span class="text-slate-500">${escapeHtml(ins.date)} &middot; ${embCount > 0 ? `${embCount} cropped slot${embCount === 1 ? '' : 's'}` : 'whole photo'}</span>
               </div>
