@@ -665,6 +665,12 @@
         <div class="lg:col-span-5 space-y-3 border border-slate-200 rounded-xl p-4 bg-slate-50">
           <label class="block text-xs font-semibold text-slate-700">1. Upload Inspiration Photo &amp; Drag to Crop Each Garment</label>
           <input type="file" id="inspoFileInput" accept="image/*" class="block w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs font-semibold file:bg-slate-900 file:text-white hover:file:bg-slate-800">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <label class="inline-flex items-center gap-1.5 text-slate-700 font-medium cursor-pointer select-none">
+              <input type="checkbox" id="inspoAutoRmbg" checked class="rounded border-slate-300 text-indigo-700 focus:ring-indigo-600">
+              <span>AI background removal on cropped slots (RMBG-1.4)</span>
+            </label>
+          </div>
           <div id="inspoPreviewWrap" class="hidden space-y-2">
             <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
               <span class="font-semibold text-indigo-900">Drag a box on the photo for:</span>
@@ -2141,6 +2147,7 @@
   ];
   let currentInspoClip = null;
   let inspoSourceImg = null;
+  let inspoUploadId = 0;
   let inspoDragState = null;
   let builderItemIds = [];
   let builderCatFilter = 'all';
@@ -8786,7 +8793,7 @@
     }
   });
 
-  // Inspo Photo Upload -> Load onto Interactive Crop Canvas
+  // Inspo Photo Upload -> Load onto Interactive Crop Canvas (zero whole-photo RMBG bottleneck)
   document.getElementById('inspoFileInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -8795,6 +8802,7 @@
       const img = new Image();
       img.onload = () => {
         inspoSourceImg = img;
+        inspoUploadId++;
         const canvas = document.getElementById('inspoCropCanvas');
         const maxW = 900, maxH = 760;
         const scale = Math.min(1, maxW / img.width, maxH / img.height);
@@ -8806,6 +8814,7 @@
         box.innerHTML = '<strong>Photo loaded!</strong> Select a garment slot above and <strong>drag a crop box</strong> directly on the photo to extract a clean 512-D CLIP vector for that piece.';
         currentInspoSlots.forEach(sl => { sl.cropRect = null; sl.cropThumb = null; sl.clipEmbedding = null; sl.clipImageEmbedding = null; });
         renderInspoView();
+        ensureClipLoaded().catch(() => null);
       };
       img.src = ev.target.result;
     };
@@ -8821,7 +8830,7 @@
     activateInspoSlot(newIdx);
   });
 
-  // Interactive Pointer Drag-to-Crop on #inspoCropCanvas
+  // Interactive Pointer Drag-to-Crop on #inspoCropCanvas (per-slot parallel RMBG-1.4 + FashionCLIP)
   const cropCanvas = document.getElementById('inspoCropCanvas');
   function getCanvasCoords(e) {
     const rect = cropCanvas.getBoundingClientRect();
@@ -8868,6 +8877,9 @@
     const slot = currentInspoSlots[slotIdx];
     if (!slot) return;
 
+    const myUploadId = inspoUploadId;
+    const myJobId = (slot._cropJobId = (slot._cropJobId || 0) + 1);
+
     // Extract cropped region from high-res source image
     const normRect = { x: x / cropCanvas.width, y: y / cropCanvas.height, w: w / cropCanvas.width, h: h / cropCanvas.height };
     const off = document.createElement('canvas');
@@ -8883,43 +8895,84 @@
     octx.imageSmoothingEnabled = true;
     octx.imageSmoothingQuality = 'high';
     octx.drawImage(inspoSourceImg, sx, sy, sw, sh, 0, 0, off.width, off.height);
-    const cropUrl = off.toDataURL('image/jpeg', 0.88);
+    const rawCropUrl = off.toDataURL('image/jpeg', 0.88);
 
-    // Dominant color of crop center
+    // Initial center color & raw crop preview (instant feedback)
     const imgData = octx.getImageData(Math.floor(off.width * 0.25), Math.floor(off.height * 0.25), Math.max(1, Math.floor(off.width * 0.5)), Math.max(1, Math.floor(off.height * 0.5))).data;
     let rC = 0, gC = 0, bC = 0, cnt = 0;
     for (let i = 0; i < imgData.length; i += 16) { rC += imgData[i]; gC += imgData[i + 1]; bC += imgData[i + 2]; cnt++; }
     const toH = v => Math.round(v / Math.max(1, cnt)).toString(16).padStart(2, '0');
     slot.colorHex = `#${toH(rC)}${toH(gC)}${toH(bC)}`;
     slot.cropRect = normRect;
-    slot.cropThumb = cropUrl;
+    slot.cropThumb = rawCropUrl;
 
+    const useRmbg = Boolean(document.getElementById('inspoAutoRmbg') && document.getElementById('inspoAutoRmbg').checked);
     const box = document.getElementById('inspoClipAnalysis');
     box.classList.remove('hidden');
-    box.textContent = `Running CLIP-ViT-B/32 on cropped ${slot.category}...`;
     drawInspoCanvas(null);
 
     try {
+      // Run FashionCLIP warmup & off-thread per-slot RMBG-1.4 cutout in parallel!
+      const clipWarm = ensureClipLoaded().catch(() => null);
+      let clipTargetUrl = rawCropUrl;
+      let usedRmbg = false;
+
+      if (useRmbg) {
+        box.textContent = `Step 1/2: Removing background on ${slot.category} slot (RMBG-1.4)...`;
+        try {
+          const [cut] = await Promise.all([
+            runRmbgCutout(rawCropUrl, msg => {
+              if (myUploadId === inspoUploadId && slot._cropJobId === myJobId) box.textContent = msg;
+            }),
+            clipWarm
+          ]);
+          if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
+          slot.cropThumb = cut.cutoutPng;
+          slot.colorHex = safeHex(cut.dominantHex);
+          clipTargetUrl = cut.clipInputJpg;
+          usedRmbg = true;
+        } catch (rmbgErr) {
+          if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
+          box.textContent = `RMBG-1.4 unavailable—embedding raw ${slot.category} crop...`;
+          await clipWarm;
+        }
+      } else {
+        await clipWarm;
+      }
+
+      if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
+      box.textContent = usedRmbg
+        ? `Step 2/2: Embedding clean ${slot.category} cutout in 512-D FashionCLIP...`
+        : `Embedding cropped ${slot.category} in 512-D FashionCLIP...`;
+
       const tw = (slot.textWeight != null ? slot.textWeight : 40) / 100;
-      const res = await analyzeImageWithClip(cropUrl, msg => { box.textContent = msg; }, slot.textNote || '', tw);
+      const res = await analyzeImageWithClip(clipTargetUrl, msg => {
+        if (myUploadId === inspoUploadId && slot._cropJobId === myJobId) box.textContent = msg;
+      }, slot.textNote || '', tw);
+      if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
+
       slot.clipEmbedding = res.embedding512;
       slot.clipImageEmbedding = res.imageEmbedding512;
       slot.clipInferred = res.inferred;
       slot.clipConfidences = res.confidences;
-      // Keep manual overrides optional (blank = Auto CLIP)
       slot.warmth = null;
       slot.formality = null;
       slot.silhouette = '';
       slot.rain = null;
       slot.comfort = null;
+
       const smartSlot = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, slot.category);
+      if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
+
       slot.label = smartSlot
         ? smartSlot.name
         : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${slot.category} (Cropped)`;
-      box.innerHTML = `<strong>Cropped ${escapeHtml(slot.category)} Embedded (512-D):</strong> Warmth ${res.inferred.warmth}/5 (${res.confidences.warmth}%) · Formality ${res.inferred.formality}/5 · ${escapeHtml(res.inferred.silhouette)}`;
+      const bgTag = usedRmbg ? ' (RMBG Cutout)' : '';
+      box.innerHTML = `<strong>Cropped ${escapeHtml(slot.category)}${bgTag} Embedded (512-D):</strong> Warmth ${res.inferred.warmth}/5 (${res.confidences.warmth}%) · Formality ${res.inferred.formality}/5 · ${escapeHtml(res.inferred.silhouette)}`;
       renderInspoView();
-      showToast(`Cropped & embedded ${slot.category} in 512-D CLIP space!`);
+      showToast(`Cropped & embedded ${slot.category}${bgTag} in 512-D CLIP space!`);
     } catch (err) {
+      if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
       box.textContent = 'CLIP unavailable—saved visual crop & dominant color.';
       renderInspoView();
     }
