@@ -6471,25 +6471,36 @@
 
     const coverage = Math.round((matchedOwnedCount / Math.max(1, currentInspoSlots.length)) * 100);
     const avgVisualMatch = totalBestSim / Math.max(1, currentInspoSlots.length);
-    const rawViability = evaluateOutfit(matchedItemsForScoring, { temp, weather: currentInspoSlots.some(s => s.rain) ? 'rain' : 'clear', occasion });
-
-    // Calibrate Inspo Viability with real 512-D style distance + closet overlap (prevents OOD looks from scoring 80+)
-    const oodStyleScore = Math.max(12, Math.min(96, Math.round(28 + (avgVisualMatch - 0.50) * 185)));
-    const finalInspoScore = anyClipMatch
-      ? Math.round(rawViability.score * 0.48 + oodStyleScore * 0.52)
-      : Math.round(rawViability.score * 0.72 + (coverage * 0.28));
-    const finalInspoCert = anyClipMatch ? rawViability.certainty : Math.min(48, rawViability.certainty);
-    const viability = { score: Math.max(10, Math.min(98, finalInspoScore)), certainty: finalInspoCert };
+    const inspoStyleItems = currentInspoSlots.map(s => ({
+      ...s,
+      status: 'wishlist',
+      clipEmbedding: s.clipEmbedding || (currentInspoClip ? currentInspoClip.embedding512 : null)
+    }));
+    let inspoStyleScore = 65;
+    let inspoStyleCert = 25;
+    if (inspoStyleItems.length >= 2) {
+      const rawViability = evaluateOutfit(inspoStyleItems, { temp, weather: currentInspoSlots.some(s => s.rain) ? 'rain' : 'clear', occasion });
+      inspoStyleScore = rawViability.styleScore ?? rawViability.score;
+      inspoStyleCert = rawViability.styleCertainty ?? rawViability.certainty;
+    } else if (inspoStyleItems.length === 1) {
+      const singleEv = evaluateSingleItem(inspoStyleItems[0]);
+      inspoStyleScore = singleEv.score;
+      inspoStyleCert = singleEv.certainty;
+    }
+    const viability = {
+      score: Math.max(10, Math.min(98, Math.round(inspoStyleScore))),
+      certainty: Math.max(15, Math.min(95, Math.round(inspoStyleCert)))
+    };
 
     const unembeddedNote = unembeddedPhotoCount > 0
       ? ` Note: ${unembeddedPhotoCount} owned photos don't have CLIP 512-D vectors yet—click "Update CLIP" on the Closet tab for true 512-D matching.`
       : '';
 
     const verdict = coverage === 100
-      ? 'You can recreate this look from your existing closet today—no purchase needed.'
+      ? `Style score ${viability.score}/100 — you can recreate this look from your existing closet today.`
       : (viability.score >= 74
-        ? `Strong match for your wardrobe & style (${viability.score}/100, ${Math.round(avgVisualMatch * 100)}% avg similarity). You own ${matchedOwnedCount} of ${currentInspoSlots.length} pieces.`
-        : `Low alignment with your current wardrobe (${viability.score}/100, ${Math.round(avgVisualMatch * 100)}% avg similarity, ${coverage}% owned)—this aesthetic sits outside your existing pieces.${unembeddedNote}`);
+        ? `Strong style fit (${viability.score}/100, ${Math.round(avgVisualMatch * 100)}% avg closet similarity). You own ${matchedOwnedCount} of ${currentInspoSlots.length} pieces.`
+        : `Style score ${viability.score}/100 (${Math.round(avgVisualMatch * 100)}% avg closet similarity, ${coverage}% owned).${unembeddedNote}`);
 
     const resEl = document.getElementById('inspoResults');
     resEl.innerHTML = `
@@ -6498,7 +6509,7 @@
           <h3 class="text-sm font-bold text-slate-900">Closet Coverage: <span class="text-blue-700">${coverage}%</span> (${matchedOwnedCount}/${currentInspoSlots.length} owned)</h3>
           ${currentInspoClip ? `<span class="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-bold">CLIP 512-D Active</span>` : ''}
         </div>
-        ${renderDualBars(viability.score, viability.certainty)}
+        ${renderDualBars(viability.score, viability.certainty, 'Style')}
         <p class="text-xs text-slate-700 font-medium">${escapeHtml(verdict)}</p>
         <div class="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
           <input type="text" id="inspoLogTitle" placeholder="Optional title (e.g. Boxy jacket + wide trousers)" class="flex-1 min-w-[160px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs">
