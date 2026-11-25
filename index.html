@@ -6352,7 +6352,7 @@
               </select>
               ${has512 ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-700 text-white">512-D</span>` : ''}
             </div>
-            <input type="text" data-slot="${idx}" class="inspo-label w-full text-xs font-semibold text-slate-800 focus:outline-none mt-0.5" value="${escapeHtml(s.label)}">
+            <input type="text" data-slot="${idx}" ${s._clipBusy ? 'disabled placeholder="Waiting for CLIP..."' : ''} class="inspo-label w-full text-xs font-semibold focus:outline-none mt-0.5 rounded px-1 ${s._clipBusy ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'text-slate-800 bg-transparent'}" value="${s._clipBusy ? '' : escapeHtml(s.label)}">
           </div>
           ${currentInspoSlots.length > 1 ? `<button type="button" data-del-slot="${idx}" class="inspo-del-slot text-slate-400 hover:text-rose-600 text-sm px-1" title="Remove slot">&times;</button>` : ''}
         </div>
@@ -6699,10 +6699,14 @@
     listEl.querySelectorAll('.del-inspo-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.delInspo;
-        state.inspoLogs = (state.inspoLogs || []).filter(x => x.id !== id);
-        saveState();
-        renderInspoLogList();
-        showToast('Removed inspo from Inspo Log.');
+        const target = (state.inspoLogs || []).find(x => x.id === id);
+        if (!target) return;
+        openConfirmModal('Delete Saved Inspo?', `Delete "${target.title}" from your Inspo Log? This will update your style model.`, () => {
+          state.inspoLogs = (state.inspoLogs || []).filter(x => x.id !== id);
+          saveState();
+          renderInspoLogList();
+          showToast(`Deleted "${target.title}" from Inspo Log.`);
+        });
       });
     });
   }
@@ -7364,58 +7368,91 @@
     ensureRmbgLoaded().catch(() => null);
   }
 
+  function setNameInputClipLock(el, locked) {
+    if (!el) return;
+    if (locked) {
+      if (el.dataset.prevPlaceholder === undefined) el.dataset.prevPlaceholder = el.placeholder || '';
+      el.disabled = true;
+      el.placeholder = 'Waiting for CLIP...';
+      el.classList.add('bg-slate-100', 'text-slate-400', 'cursor-not-allowed');
+      el.classList.remove('bg-white');
+    } else {
+      el.disabled = false;
+      if (el.dataset.prevPlaceholder !== undefined) {
+        el.placeholder = el.dataset.prevPlaceholder;
+        delete el.dataset.prevPlaceholder;
+      }
+      el.classList.remove('bg-slate-100', 'text-slate-400', 'cursor-not-allowed');
+      el.classList.add('bg-white');
+    }
+  }
+
+  document.getElementById('fName').addEventListener('input', e => {
+    delete e.target.dataset.autoNamed;
+  });
+
   async function processUploadedGarmentPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
     const runTask = (async () => {
-      // Always load FashionCLIP in parallel with RMBG-1.4 background removal!
-      const clipWarmup = ensureClipLoaded().catch(() => null);
-    pendingRawPhotoUrl = rawDataUrl;
-    pendingPhotoDataUrl = rawDataUrl;
-    document.getElementById('fColorHex').value = safeHex(rawHex);
-    document.getElementById('fPhotoPreview').innerHTML = `<img src="${rawDataUrl}" class="w-full h-full object-contain" alt="Preview">`;
-    document.getElementById('btnRevertRawPhoto').classList.add('hidden');
-    document.getElementById('btnRunRmbgNow').classList.toggle('hidden', runNeuralRmbg);
-
-    let clipTargetUrl = rawDataUrl;
-    if (runNeuralRmbg) {
-      renderModalClipBox(null, 'Step 1/2: Removing background with RMBG-1.4...');
-      try {
-        const cut = await runRmbgCutout(rawDataUrl, msg => renderModalClipBox(null, msg));
-        pendingPhotoDataUrl = cut.cutoutPng;
-        clipTargetUrl = cut.clipInputJpg;
-        document.getElementById('fColorHex').value = safeHex(cut.dominantHex);
-        document.getElementById('fPhotoPreview').innerHTML = `<img src="${cut.cutoutPng}" class="w-full h-full object-contain" alt="Cutout Preview">`;
-        document.getElementById('btnRevertRawPhoto').classList.remove('hidden');
-        document.getElementById('btnRunRmbgNow').classList.add('hidden');
-      } catch (rmbgErr) {
-        renderModalClipBox(null, 'RMBG-1.4 unavailable—falling back to raw photo for CLIP...');
-        document.getElementById('btnRunRmbgNow').classList.remove('hidden');
-      }
-    }
-
-    renderModalClipBox(null, runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on your garment photo...');
-    try {
-      const attrs = getModalClipAttrs();
-      const rawNote = attrs.clipTextNote;
-      const vecNudge = buildAttributeNudgeText(attrs, false);
-      const w = Number(document.getElementById('fClipWeight').value) / 100;
-      const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), rawNote, w, vecNudge);
-      res.nudgeText = rawNote;
-      pendingClipResult = res;
       const nameEl = document.getElementById('fName');
-      if (!nameEl.value.trim()) {
-        renderModalClipBox(null, 'Naming piece with FashionCLIP taxonomy...');
-        const chosenCat = document.getElementById('fCategory').value || res.inferred.category;
-        const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => renderModalClipBox(null, msg));
-        nameEl.value = smart
-          ? smart.name
-          : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${res.inferred.category.charAt(0).toUpperCase() + res.inferred.category.slice(1)}`;
+      const shouldLockName = Boolean(nameEl && (!nameEl.value.trim() || nameEl.dataset.autoNamed === '1'));
+      if (shouldLockName) {
+        if (nameEl.dataset.autoNamed === '1') nameEl.value = '';
+        setNameInputClipLock(nameEl, true);
       }
-      renderModalClipBox(res, null);
-      await clipWarmup;
-      showToast(`Ready! FashionCLIP inferred: ${res.inferred.category}, warmth ${res.inferred.warmth}/5.`);
-    } catch (err) {
-      renderModalClipBox(null, 'Could not run FashionCLIP right now. Photo saved; attributes remain optional.');
-    }
+      try {
+        // Always load FashionCLIP in parallel with RMBG-1.4 background removal!
+        const clipWarmup = ensureClipLoaded().catch(() => null);
+        pendingRawPhotoUrl = rawDataUrl;
+        pendingPhotoDataUrl = rawDataUrl;
+        document.getElementById('fColorHex').value = safeHex(rawHex);
+        document.getElementById('fPhotoPreview').innerHTML = `<img src="${rawDataUrl}" class="w-full h-full object-contain" alt="Preview">`;
+        document.getElementById('btnRevertRawPhoto').classList.add('hidden');
+        document.getElementById('btnRunRmbgNow').classList.toggle('hidden', runNeuralRmbg);
+
+        let clipTargetUrl = rawDataUrl;
+        if (runNeuralRmbg) {
+          renderModalClipBox(null, 'Step 1/2: Removing background with RMBG-1.4...');
+          try {
+            const cut = await runRmbgCutout(rawDataUrl, msg => renderModalClipBox(null, msg));
+            pendingPhotoDataUrl = cut.cutoutPng;
+            clipTargetUrl = cut.clipInputJpg;
+            document.getElementById('fColorHex').value = safeHex(cut.dominantHex);
+            document.getElementById('fPhotoPreview').innerHTML = `<img src="${cut.cutoutPng}" class="w-full h-full object-contain" alt="Cutout Preview">`;
+            document.getElementById('btnRevertRawPhoto').classList.remove('hidden');
+            document.getElementById('btnRunRmbgNow').classList.add('hidden');
+          } catch (rmbgErr) {
+            renderModalClipBox(null, 'RMBG-1.4 unavailable—falling back to raw photo for CLIP...');
+            document.getElementById('btnRunRmbgNow').classList.remove('hidden');
+          }
+        }
+
+        renderModalClipBox(null, runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on your garment photo...');
+        try {
+          const attrs = getModalClipAttrs();
+          const rawNote = attrs.clipTextNote;
+          const vecNudge = buildAttributeNudgeText(attrs, false);
+          const w = Number(document.getElementById('fClipWeight').value) / 100;
+          const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), rawNote, w, vecNudge);
+          res.nudgeText = rawNote;
+          pendingClipResult = res;
+          if (shouldLockName || (nameEl && !nameEl.value.trim())) {
+            renderModalClipBox(null, 'Naming piece with FashionCLIP taxonomy...');
+            const chosenCat = document.getElementById('fCategory').value || res.inferred.category;
+            const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => renderModalClipBox(null, msg));
+            nameEl.value = smart
+              ? smart.name
+              : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${res.inferred.category.charAt(0).toUpperCase() + res.inferred.category.slice(1)}`;
+            nameEl.dataset.autoNamed = '1';
+          }
+          renderModalClipBox(res, null);
+          await clipWarmup;
+          showToast(`Ready! FashionCLIP inferred: ${res.inferred.category}, warmth ${res.inferred.warmth}/5.`);
+        } catch (err) {
+          renderModalClipBox(null, 'Could not run FashionCLIP right now. Photo saved; attributes remain optional.');
+        }
+      } finally {
+        if (shouldLockName) setNameInputClipLock(nameEl, false);
+      }
     })();
     pendingPhotoAnalysisPromise = runTask;
     try { await runTask; } finally {
@@ -7616,11 +7653,17 @@
     const delLogBtn = e.target.closest('.del-log-btn');
     if (delLogBtn) {
       const lid = delLogBtn.dataset.delLog;
-      state.outfitLogs = state.outfitLogs.filter(l => l.id !== lid);
-      if (activeInlineLb && activeInlineLb.kind === 'log' && activeInlineLb.key === lid) activeInlineLb = null;
-      saveState();
-      renderAll();
-      showToast('Deleted logged outfit & recalculated model scores.');
+      const targetLog = state.outfitLogs.find(l => l.id === lid);
+      if (!targetLog) return;
+      const logLabel = targetLog.date ? `from ${targetLog.date}` : '';
+      openConfirmModal('Delete Logged Outfit?', `Delete this logged outfit ${logLabel}? This will recalculate your style and thermal models.`, () => {
+        state.outfitLogs = state.outfitLogs.filter(l => l.id !== lid);
+        if (activeInlineLb && activeInlineLb.kind === 'log' && activeInlineLb.key === lid) activeInlineLb = null;
+        saveState();
+        renderAll();
+        showToast('Deleted logged outfit & recalculated model scores.');
+      });
+      return;
     }
 
     const pairToggle = e.target.closest('.gap-pairs-toggle');
@@ -7772,6 +7815,13 @@
 
   async function processTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
     const runTask = (async () => {
+    const tNameLockEl = document.getElementById('tName');
+    const shouldLockTName = Boolean(tNameLockEl && (!tNameLockEl.value.trim() || tNameLockEl.dataset.autoNamed === '1'));
+    if (shouldLockTName) {
+      if (tNameLockEl.dataset.autoNamed === '1') tNameLockEl.value = '';
+      setNameInputClipLock(tNameLockEl, true);
+    }
+    try {
     const clipWarmup = ensureClipLoaded().catch(() => null);
     const st = document.getElementById('tClipStatus');
     const prev = document.getElementById('tPhotoPreview');
@@ -7832,6 +7882,9 @@
     } catch (err) {
       st.textContent = 'Photo attached (FashionCLIP unavailable right now—color extracted).';
     }
+    } finally {
+      if (shouldLockTName) setNameInputClipLock(tNameLockEl, false);
+    }
     })();
     pendingTryOnAnalysisPromise = runTask;
     try { await runTask; } finally {
@@ -7872,6 +7925,8 @@
     const st = document.getElementById('tClipStatus');
     if (tNameEl && (!tNameEl.value.trim() || tNameEl.dataset.autoNamed === '1')) {
       const cat = e.target.value || (pendingTryOnClip.inferred && pendingTryOnClip.inferred.category) || 'top';
+      tNameEl.value = '';
+      setNameInputClipLock(tNameEl, true);
       if (st) { st.classList.remove('hidden'); st.textContent = 'Re-naming piece for updated category...'; }
       try {
         const smart = await decodeSmartGarmentName(clipEngine, pendingTryOnClip.imageEmbedding512 || pendingTryOnClip.embedding512, cat, msg => { if (st) st.textContent = msg; });
@@ -7880,7 +7935,9 @@
           tNameEl.dataset.autoNamed = '1';
           if (st) st.textContent = `CLIP 512-D ready: ${smart.name} · warmth ${pendingTryOnClip.inferred.warmth}/5 · ${pendingTryOnClip.inferred.silhouette}`;
         }
-      } catch (_) {}
+      } catch (_) {} finally {
+        setNameInputClipLock(tNameEl, false);
+      }
     }
   });
 
@@ -8108,6 +8165,13 @@
 
   async function processSugTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
     const runTask = (async () => {
+      const stNameLockEl = document.getElementById('stName');
+      const shouldLockStName = Boolean(stNameLockEl && (!stNameLockEl.value.trim() || stNameLockEl.dataset.autoNamed === '1'));
+      if (shouldLockStName) {
+        if (stNameLockEl.dataset.autoNamed === '1') stNameLockEl.value = '';
+        setNameInputClipLock(stNameLockEl, true);
+      }
+      try {
       const clipWarmup = ensureClipLoaded().catch(() => null);
       const st = document.getElementById('stClipStatus');
       const prev = document.getElementById('stPhotoPreview');
@@ -8173,6 +8237,9 @@
       } catch (err) {
         st.textContent = 'Photo attached (FashionCLIP unavailable right now—color extracted).';
       }
+      } finally {
+        if (shouldLockStName) setNameInputClipLock(stNameLockEl, false);
+      }
     })();
     pendingSugTryAnalysisPromise = runTask;
     try { await runTask; } finally {
@@ -8213,6 +8280,8 @@
     const st = document.getElementById('stClipStatus');
     if (stNameEl && (!stNameEl.value.trim() || stNameEl.dataset.autoNamed === '1')) {
       const cat = e.target.value || (pendingSugTryClip.inferred && pendingSugTryClip.inferred.category) || 'top';
+      stNameEl.value = '';
+      setNameInputClipLock(stNameEl, true);
       if (st) { st.classList.remove('hidden'); st.textContent = 'Re-naming piece for updated category...'; }
       try {
         const smart = await decodeSmartGarmentName(clipEngine, pendingSugTryClip.imageEmbedding512 || pendingSugTryClip.embedding512, cat, msg => { if (st) st.textContent = msg; });
@@ -8221,7 +8290,9 @@
           stNameEl.dataset.autoNamed = '1';
           if (st) st.textContent = `CLIP 512-D ready: ${smart.name} · warmth ${pendingSugTryClip.inferred.warmth}/5 · ${pendingSugTryClip.inferred.silhouette}`;
         }
-      } catch (_) {}
+      } catch (_) {} finally {
+        setNameInputClipLock(stNameEl, false);
+      }
     }
   });
 
@@ -8909,6 +8980,8 @@
     const useRmbg = Boolean(document.getElementById('inspoAutoRmbg') && document.getElementById('inspoAutoRmbg').checked);
     const box = document.getElementById('inspoClipAnalysis');
     box.classList.remove('hidden');
+    slot._clipBusy = true;
+    renderInspoView();
     drawInspoCanvas(null);
 
     try {
@@ -8968,13 +9041,20 @@
         ? smartSlot.name
         : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${slot.category} (Cropped)`;
       const bgTag = usedRmbg ? ' (RMBG Cutout)' : '';
+      slot._clipBusy = false;
       box.innerHTML = `<strong>Cropped ${escapeHtml(slot.category)}${bgTag} Embedded (512-D):</strong> Warmth ${res.inferred.warmth}/5 (${res.confidences.warmth}%) · Formality ${res.inferred.formality}/5 · ${escapeHtml(res.inferred.silhouette)}`;
       renderInspoView();
       showToast(`Cropped & embedded ${slot.category}${bgTag} in 512-D CLIP space!`);
     } catch (err) {
       if (myUploadId !== inspoUploadId || slot._cropJobId !== myJobId) return;
+      slot._clipBusy = false;
       box.textContent = 'CLIP unavailable—saved visual crop & dominant color.';
       renderInspoView();
+    } finally {
+      if (myUploadId === inspoUploadId && slot._cropJobId === myJobId && slot._clipBusy) {
+        slot._clipBusy = false;
+        renderInspoView();
+      }
     }
   });
 
@@ -9029,6 +9109,8 @@
       renderInspoView();
       if (slot.cropThumb || slot.clipImageEmbedding || slot.clipEmbedding) {
         (async () => {
+          slot._clipBusy = true;
+          renderInspoView();
           const box = document.getElementById('inspoClipAnalysis');
           if (box) {
             box.classList.remove('hidden');
@@ -9061,8 +9143,10 @@
             if (box && slot.clipInferred) {
               box.innerHTML = `<strong>Updated ${escapeHtml(slot.category)} (512-D):</strong> ${escapeHtml(slot.label)} · Warmth ${slot.clipInferred.warmth}/5 · Formality ${slot.clipInferred.formality}/5 · ${escapeHtml(slot.clipInferred.silhouette)}`;
             }
+          } catch (_) {} finally {
+            slot._clipBusy = false;
             renderInspoView();
-          } catch (_) {}
+          }
         })();
       }
     } else if (e.target.classList.contains('inspo-attr')) {
@@ -9087,8 +9171,15 @@
     const delBtn = e.target.closest('.inspo-del-slot');
     if (delBtn) {
       const idx = Number(delBtn.dataset.delSlot);
-      currentInspoSlots.splice(idx, 1);
-      renderInspoView();
+      const slot = currentInspoSlots[idx];
+      if (!slot) return;
+      openConfirmModal('Remove Garment Slot?', `Remove "${slot.label}" (${slot.category}) from this inspiration breakdown?`, () => {
+        if (idx >= 0 && idx < currentInspoSlots.length && currentInspoSlots.length > 1) {
+          currentInspoSlots.splice(idx, 1);
+          renderInspoView();
+          showToast(`Removed "${slot.label}" slot.`);
+        }
+      });
       return;
     }
     const nudgeBtn = e.target.closest('.inspo-nudge-btn');
