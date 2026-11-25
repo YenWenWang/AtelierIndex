@@ -452,13 +452,13 @@
       </div>
 
       <!-- Quick In-Store Try-On Anchor Drawer -->
-      <div id="sugTryOnDrawer" class="hidden p-3 rounded-xl bg-purple-50/70 border border-purple-200 space-y-2">
+      <div id="sugTryOnDrawer" class="hidden p-3.5 rounded-xl bg-purple-50/70 border border-purple-200 space-y-2.5">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold text-purple-950">Snap or Describe an In-Store Piece to Style Around</span>
           <button type="button" id="btnCloseSugTryOn" class="text-purple-400 hover:text-purple-800 text-sm font-bold px-1">&times;</button>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <input type="text" id="stName" placeholder="Name (e.g. Brown Suede Jacket)" class="px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input type="text" id="stName" placeholder="Name (auto-filled by CLIP or type your own)" class="px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
           <select id="stCategory" class="px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
             <option value="">Category: Auto (CLIP)</option>
             <option value="outerwear">Outerwear</option>
@@ -468,19 +468,63 @@
             <option value="shoes">Shoes</option>
             <option value="accessory">Accessory</option>
           </select>
-          <input type="file" id="stPhoto" accept="image/*" class="text-[11px] text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-purple-700 file:text-white">
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <label class="inline-flex items-center gap-1.5 text-[11px] text-purple-950 font-medium cursor-pointer select-none">
+          <div id="stPhotoPreview" class="hidden w-11 h-11 rounded-lg border border-purple-200 bg-white overflow-hidden shrink-0 items-center justify-center p-0.5"></div>
+          <input type="file" id="stPhoto" accept="image/*" class="flex-1 min-w-[160px] text-[11px] text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-purple-700 file:text-white hover:file:bg-purple-800">
+          <input type="color" id="stColorHex" value="#475569" class="w-8 h-7 rounded border border-purple-200 cursor-pointer p-0.5" title="Color">
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <label class="inline-flex items-center gap-1.5 text-purple-950 font-medium cursor-pointer select-none">
             <input type="checkbox" id="stAutoRmbg" checked class="rounded border-purple-300 text-purple-700 focus:ring-purple-600">
             <span>AI background removal (RMBG-1.4)</span>
           </label>
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="btnRunSugTryRmbg" class="hidden px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-800 font-semibold hover:bg-purple-100">Remove BG</button>
+            <button type="button" id="btnRevertSugTryRaw" class="hidden px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-100">Use Raw Photo</button>
+          </div>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <input type="text" id="stClipText" placeholder="Optional 512-D text note (e.g. oversized camel wool coat)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
-          <button type="button" id="btnAddSugTryOn" class="px-3.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold">Add as Anchor</button>
+        <input type="text" id="stClipText" placeholder="Optional 512-D text note (e.g. oversized camel wool coat)" class="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 bg-white text-xs">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          <div class="space-y-1">
+            <select id="stBrandSelect" class="brand-sel w-full px-1.5 py-1 rounded-md border border-purple-200 bg-white text-[11px]"></select>
+            <input type="text" id="stBrand" placeholder="New brand name..." class="hidden w-full px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+          </div>
+          <input type="text" id="stSizeLabel" placeholder="Size (e.g. M, 32)" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+          <select id="stFitFeedback" class="px-1.5 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+            <option value="untested">Fit Outcome: Unset</option>
+            <option value="perfect">Fit: Ideal / Just Right</option>
+            <option value="tight">Fit: Too Tight</option>
+            <option value="loose">Fit: Too Loose</option>
+          </select>
+          <input type="number" id="stPrice" min="0" placeholder="Price $" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          <select id="stWarmth" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+            <option value="">Warmth: Auto</option>
+            <option value="1">Warmth 1 · Summer</option><option value="2">Warmth 2 · Light</option><option value="3">Warmth 3 · Mid</option><option value="4">Warmth 4 · Warm</option><option value="5">Warmth 5 · Winter</option>
+          </select>
+          <select id="stFormality" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+            <option value="">Formality: Auto</option>
+            <option value="1">Formality 1 · Lounge</option><option value="2">Formality 2 · Casual</option><option value="3">Formality 3 · Smart</option><option value="4">Formality 4 · Office</option><option value="5">Formality 5 · Formal</option>
+          </select>
+          <select id="stSilhouette" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+            <option value="">Silhouette: Auto</option>
+            <option value="fitted">Silhouette: Fitted</option><option value="structured">Silhouette: Structured</option><option value="relaxed">Silhouette: Relaxed</option>
+          </select>
+          <select id="stComfort" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+            <option value="">Comfort: Unset</option>
+            <option value="5">Comfort 5 · Effortless</option><option value="4">Comfort 4 · Good</option><option value="3">Comfort 3 · Fine</option><option value="2">Comfort 2 · Annoying</option><option value="1">Comfort 1 · Poor</option>
+          </select>
+          <select id="stRain" class="px-2 py-1 rounded-md border border-purple-200 bg-white text-[11px]">
+            <option value="">Rain: Auto</option>
+            <option value="0">Rain: Dry Only</option><option value="1">Rain: Water-Resistant</option>
+          </select>
         </div>
         <div id="stClipStatus" class="hidden text-[11px] text-purple-900 font-medium"></div>
+        <div class="flex justify-end gap-2">
+          <button type="button" id="btnAddSugTryOn" class="px-3.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold transition">Add as Anchor</button>
+        </div>
       </div>
 
       <div class="space-y-2.5">
@@ -4084,6 +4128,7 @@
   const BRAND_PAIRS = [
     { sel: 'fBrandSelect', inp: 'fBrand', emptyLabel: 'None / Unbranded' },
     { sel: 'tBrandSelect', inp: 'tBrand', emptyLabel: 'Brand (Optional)' },
+    { sel: 'stBrandSelect', inp: 'stBrand', emptyLabel: 'Brand (Optional)' },
     { sel: 'sizeBrandSelect', inp: 'sizeBrand', emptyLabel: 'Any Brand (All Brands)' }
   ];
 
@@ -5496,10 +5541,11 @@
   }
 
   // Zero-shot smart garment namer for newly uploaded photos & in-store try-ons using the 178-prompt FashionCLIP taxonomy
-  async function decodeSmartGarmentName(eng, vec512, categoryHint) {
+  async function decodeSmartGarmentName(eng, vec512, categoryHint, onProgress) {
     if (!vec512 || vec512.length !== 512) return null;
     try {
-      const banks = await ensureDecodeBanksLoaded(eng);
+      const activeEng = (eng && eng.textModel) ? eng : await ensureClipLoaded(onProgress);
+      const banks = await ensureDecodeBanksLoaded(activeEng, onProgress);
       let bestType = CLIP_DECODE_TYPES[0], bestTypeSim = -99;
       for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
         if (categoryHint && CLIP_DECODE_TYPES[i].category !== categoryHint) continue;
@@ -5511,13 +5557,15 @@
         const sim = cosineSimilarity(vec512, banks.colorVecs[i]);
         if (sim > bestColorSim) { bestColorSim = sim; bestColor = CLIP_DECODE_COLORS[i]; }
       }
-      let bestPat = CLIP_DECODE_PATTERNS[0], bestPatSim = -99;
-      const solidSim = cosineSimilarity(vec512, banks.patternVecs[0]);
-      for (let i = 0; i < CLIP_DECODE_PATTERNS.length; i++) {
-        const sim = cosineSimilarity(vec512, banks.patternVecs[i]);
-        if (sim > bestPatSim) { bestPatSim = sim; bestPat = CLIP_DECODE_PATTERNS[i]; }
+      let bestPat = CLIP_DECODE_PATTERNS[0], bestPatSim = -99, usePat = false;
+      if (Array.isArray(banks.patternVecs) && banks.patternVecs.length === CLIP_DECODE_PATTERNS.length) {
+        const solidSim = cosineSimilarity(vec512, banks.patternVecs[0]);
+        for (let i = 0; i < CLIP_DECODE_PATTERNS.length; i++) {
+          const sim = cosineSimilarity(vec512, banks.patternVecs[i]);
+          if (sim > bestPatSim) { bestPatSim = sim; bestPat = CLIP_DECODE_PATTERNS[i]; }
+        }
+        usePat = !bestPat.isSolid && (bestPatSim - solidSim > 0.015);
       }
-      const usePat = !bestPat.isSolid && (bestPatSim - solidSim > 0.015);
       const parts = [bestColor.label];
       if (usePat) parts.push(bestPat.label);
       parts.push(bestType.label);
@@ -7297,14 +7345,16 @@
       const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), rawNote, w, vecNudge);
       res.nudgeText = rawNote;
       pendingClipResult = res;
-      renderModalClipBox(res, null);
       const nameEl = document.getElementById('fName');
       if (!nameEl.value.trim()) {
-        const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, res.inferred.category);
+        renderModalClipBox(null, 'Naming piece with FashionCLIP taxonomy...');
+        const chosenCat = document.getElementById('fCategory').value || res.inferred.category;
+        const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => renderModalClipBox(null, msg));
         nameEl.value = smart
           ? smart.name
           : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${res.inferred.category.charAt(0).toUpperCase() + res.inferred.category.slice(1)}`;
       }
+      renderModalClipBox(res, null);
       await clipWarmup;
       showToast(`Ready! FashionCLIP inferred: ${res.inferred.category}, warmth ${res.inferred.warmth}/5.`);
     } catch (err) {
@@ -7698,17 +7748,31 @@
       }
     }
 
-    st.textContent = runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on try-on photo...';
+    st.textContent = runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D FashionCLIP...' : 'Running FashionCLIP on try-on photo...';
     try {
       const txt = document.getElementById('tClipText').value.trim();
       const res = await analyzeImageWithClip(clipTargetUrl, msg => { st.textContent = msg; }, txt, 0.35);
       pendingTryOnClip = res;
-      st.textContent = `CLIP 512-D ready: ${res.inferred.category} · warmth ${res.inferred.warmth}/5 · ${res.inferred.silhouette}`;
-      if (!document.getElementById('tName').value.trim()) {
-        const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, res.inferred.category);
-        document.getElementById('tName').value = smart ? smart.name : `Store ${res.inferred.silhouette} ${res.inferred.category}`;
-      }
       await clipWarmup;
+      const tNameEl = document.getElementById('tName');
+      const chosenCat = document.getElementById('tCategory').value || res.inferred.category;
+      let decodedLabel = res.inferred.category;
+      if (tNameEl && (!tNameEl.value.trim() || tNameEl.dataset.autoNamed === '1')) {
+        st.textContent = 'Naming piece with FashionCLIP taxonomy...';
+        try {
+          const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => { st.textContent = msg; });
+          const finalName = smart ? smart.name : `Store ${res.inferred.silhouette} ${chosenCat}`;
+          tNameEl.value = finalName;
+          tNameEl.dataset.autoNamed = '1';
+          decodedLabel = finalName;
+        } catch (nameErr) {
+          const fallbackName = `Store ${res.inferred.silhouette} ${chosenCat}`;
+          tNameEl.value = fallbackName;
+          tNameEl.dataset.autoNamed = '1';
+          decodedLabel = fallbackName;
+        }
+      }
+      st.textContent = `CLIP 512-D ready: ${decodedLabel} · warmth ${res.inferred.warmth}/5 · ${res.inferred.silhouette}`;
     } catch (err) {
       st.textContent = 'Photo attached (FashionCLIP unavailable right now—color extracted).';
     }
@@ -7740,6 +7804,28 @@
     if (!pendingTryOnRawPhoto) return;
     pendingTryOnClip = null;
     processTryOnPhoto(pendingTryOnRawPhoto, document.getElementById('tColorHex').value, false);
+  });
+
+  document.getElementById('tName').addEventListener('input', e => {
+    delete e.target.dataset.autoNamed;
+  });
+
+  document.getElementById('tCategory').addEventListener('change', async e => {
+    if (!pendingTryOnClip) return;
+    const tNameEl = document.getElementById('tName');
+    const st = document.getElementById('tClipStatus');
+    if (tNameEl && (!tNameEl.value.trim() || tNameEl.dataset.autoNamed === '1')) {
+      const cat = e.target.value || (pendingTryOnClip.inferred && pendingTryOnClip.inferred.category) || 'top';
+      if (st) { st.classList.remove('hidden'); st.textContent = 'Re-naming piece for updated category...'; }
+      try {
+        const smart = await decodeSmartGarmentName(clipEngine, pendingTryOnClip.imageEmbedding512 || pendingTryOnClip.embedding512, cat, msg => { if (st) st.textContent = msg; });
+        if (smart) {
+          tNameEl.value = smart.name;
+          tNameEl.dataset.autoNamed = '1';
+          if (st) st.textContent = `CLIP 512-D ready: ${smart.name} · warmth ${pendingTryOnClip.inferred.warmth}/5 · ${pendingTryOnClip.inferred.silhouette}`;
+        }
+      } catch (_) {}
+    }
   });
 
   document.getElementById('btnAddTryOnToTray').addEventListener('click', async () => {
@@ -7793,7 +7879,14 @@
     }
 
     const cat = tCatRaw || (clipRes && clipRes.inferred && clipRes.inferred.category) || 'top';
-    const name = nameEl.value.trim() || (txt ? txt.slice(0, 32) : `In-Store ${cat}`);
+    let name = nameEl.value.trim();
+    if (!name && clipRes && (clipRes.imageEmbedding512 || clipRes.embedding512)) {
+      try {
+        const smart = await decodeSmartGarmentName(clipEngine, clipRes.imageEmbedding512 || clipRes.embedding512, cat);
+        if (smart && smart.name) name = smart.name;
+      } catch (_) {}
+    }
+    if (!name) name = txt ? txt.slice(0, 32) : `In-Store ${cat}`;
     const newId = 'try_' + Date.now();
     state.items.unshift({
       id: newId,
@@ -7822,7 +7915,8 @@
       clipInferred: clipRes ? clipRes.inferred : null,
       clipConfidences: clipRes ? clipRes.confidences : null,
       clipTextNote: txt,
-      clipTextWeight: pendingTryOnPhoto ? 35 : 100
+      clipTextWeight: pendingTryOnPhoto ? 35 : 100,
+      clipModelId: clipRes ? (clipEngine && clipEngine.modelId ? clipEngine.modelId : CLIP_MODEL_ID) : null
     });
     // In-Store Try-On is saved directly in state.items (status: 'tryon') and automatically feeds Sizing & Closet → In-Store Try-Ons
     builderItemIds.push(newId);
@@ -7830,6 +7924,7 @@
 
     // Reset drawer cleanly
     nameEl.value = '';
+    delete nameEl.dataset.autoNamed;
     document.getElementById('tCategory').value = '';
     document.getElementById('tPhoto').value = '';
     document.getElementById('tClipText').value = '';
@@ -7943,8 +8038,10 @@
   });
 
   let pendingSugTryPhoto = '';
+  let pendingSugTryRawPhoto = '';
   let pendingSugTryHex = '#475569';
   let pendingSugTryClip = null;
+  let pendingSugTryAnalysisPromise = null;
 
   document.getElementById('btnToggleSugTryOn').addEventListener('click', () => {
     document.getElementById('sugTryOnDrawer').classList.toggle('hidden');
@@ -7953,78 +8050,235 @@
     document.getElementById('sugTryOnDrawer').classList.add('hidden');
   });
 
-  document.getElementById('stPhoto').addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const st = document.getElementById('stClipStatus');
-    const autoRmbg = document.getElementById('stAutoRmbg') && document.getElementById('stAutoRmbg').checked;
-    st.classList.remove('hidden');
-    st.textContent = autoRmbg ? 'Step 1/2: Removing background with RMBG-1.4...' : 'Running CLIP-ViT-B/32 on anchor photo...';
-    compressAndExtractColor(file, async (dataUrl, hex) => {
-      pendingSugTryPhoto = dataUrl;
-      pendingSugTryHex = hex;
-      let clipTargetUrl = dataUrl;
-      if (autoRmbg) {
+  async function processSugTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const runTask = (async () => {
+      const clipWarmup = ensureClipLoaded().catch(() => null);
+      const st = document.getElementById('stClipStatus');
+      const prev = document.getElementById('stPhotoPreview');
+      const btnRun = document.getElementById('btnRunSugTryRmbg');
+      const btnRev = document.getElementById('btnRevertSugTryRaw');
+      st.classList.remove('hidden');
+      pendingSugTryRawPhoto = rawDataUrl;
+      pendingSugTryPhoto = rawDataUrl;
+      pendingSugTryHex = safeHex(rawHex);
+      const colEl = document.getElementById('stColorHex');
+      if (colEl) colEl.value = pendingSugTryHex;
+      if (prev) {
+        prev.innerHTML = `<img src="${rawDataUrl}" class="w-full h-full object-contain" alt="Try-on anchor preview">`;
+        prev.classList.remove('hidden');
+        prev.classList.add('flex');
+      }
+      if (btnRev) btnRev.classList.add('hidden');
+      if (btnRun) btnRun.classList.toggle('hidden', runNeuralRmbg);
+
+      let clipTargetUrl = rawDataUrl;
+      if (runNeuralRmbg) {
+        st.textContent = 'Step 1/2: Removing background with RMBG-1.4...';
         try {
-          const cut = await runRmbgCutout(dataUrl, msg => { st.textContent = msg; });
+          const cut = await runRmbgCutout(rawDataUrl, msg => { st.textContent = msg; });
           pendingSugTryPhoto = cut.cutoutPng;
-          pendingSugTryHex = cut.dominantHex;
+          pendingSugTryHex = safeHex(cut.dominantHex);
           clipTargetUrl = cut.clipInputJpg;
+          if (colEl) colEl.value = pendingSugTryHex;
+          if (prev) prev.innerHTML = `<img src="${cut.cutoutPng}" class="w-full h-full object-contain" alt="Try-on cutout preview">`;
+          if (btnRev) btnRev.classList.remove('hidden');
+          if (btnRun) btnRun.classList.add('hidden');
         } catch (rmbgErr) {
           st.textContent = 'RMBG-1.4 unavailable—falling back to raw photo for CLIP...';
+          if (btnRun) btnRun.classList.remove('hidden');
         }
       }
-      st.textContent = autoRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on anchor photo...';
+
+      st.textContent = runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D FashionCLIP...' : 'Running FashionCLIP on anchor photo...';
       try {
         const txt = document.getElementById('stClipText').value.trim();
         const res = await analyzeImageWithClip(clipTargetUrl, msg => { st.textContent = msg; }, txt, 0.35);
         pendingSugTryClip = res;
-        st.textContent = `CLIP 512-D ready: ${res.inferred.category} · warmth ${res.inferred.warmth}/5`;
-        if (!document.getElementById('stName').value.trim()) {
-          const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, document.getElementById('stCategory').value || res.inferred.category);
-          document.getElementById('stName').value = smart ? smart.name : `Store ${res.inferred.silhouette} ${res.inferred.category}`;
+        await clipWarmup;
+        const stNameEl = document.getElementById('stName');
+        const chosenCat = document.getElementById('stCategory').value || res.inferred.category;
+        let decodedLabel = res.inferred.category;
+        if (stNameEl && (!stNameEl.value.trim() || stNameEl.dataset.autoNamed === '1')) {
+          st.textContent = 'Naming piece with FashionCLIP taxonomy...';
+          try {
+            const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => { st.textContent = msg; });
+            const finalName = smart ? smart.name : `Store ${res.inferred.silhouette} ${chosenCat}`;
+            stNameEl.value = finalName;
+            stNameEl.dataset.autoNamed = '1';
+            decodedLabel = finalName;
+          } catch (nameErr) {
+            const fallbackName = `Store ${res.inferred.silhouette} ${chosenCat}`;
+            stNameEl.value = fallbackName;
+            stNameEl.dataset.autoNamed = '1';
+            decodedLabel = fallbackName;
+          }
         }
+        st.textContent = `CLIP 512-D ready: ${decodedLabel} · warmth ${res.inferred.warmth}/5 · ${res.inferred.silhouette}`;
       } catch (err) {
-        st.textContent = 'Photo attached (color extracted).';
+        st.textContent = 'Photo attached (FashionCLIP unavailable right now—color extracted).';
       }
+    })();
+    pendingSugTryAnalysisPromise = runTask;
+    try { await runTask; } finally {
+      if (pendingSugTryAnalysisPromise === runTask) pendingSugTryAnalysisPromise = null;
+    }
+  }
+
+  document.getElementById('stPhoto').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    pendingSugTryClip = null;
+    const autoRmbg = document.getElementById('stAutoRmbg') && document.getElementById('stAutoRmbg').checked;
+    compressAndExtractColor(file, (dataUrl, hex) => {
+      processSugTryOnPhoto(dataUrl, hex, autoRmbg);
     });
   });
 
+  document.getElementById('btnRunSugTryRmbg').addEventListener('click', () => {
+    const src = pendingSugTryRawPhoto || pendingSugTryPhoto;
+    if (!src) return;
+    pendingSugTryClip = null;
+    processSugTryOnPhoto(src, document.getElementById('stColorHex').value, true);
+  });
+
+  document.getElementById('btnRevertSugTryRaw').addEventListener('click', () => {
+    if (!pendingSugTryRawPhoto) return;
+    pendingSugTryClip = null;
+    processSugTryOnPhoto(pendingSugTryRawPhoto, document.getElementById('stColorHex').value, false);
+  });
+
+  document.getElementById('stName').addEventListener('input', e => {
+    delete e.target.dataset.autoNamed;
+  });
+
+  document.getElementById('stCategory').addEventListener('change', async e => {
+    if (!pendingSugTryClip) return;
+    const stNameEl = document.getElementById('stName');
+    const st = document.getElementById('stClipStatus');
+    if (stNameEl && (!stNameEl.value.trim() || stNameEl.dataset.autoNamed === '1')) {
+      const cat = e.target.value || (pendingSugTryClip.inferred && pendingSugTryClip.inferred.category) || 'top';
+      if (st) { st.classList.remove('hidden'); st.textContent = 'Re-naming piece for updated category...'; }
+      try {
+        const smart = await decodeSmartGarmentName(clipEngine, pendingSugTryClip.imageEmbedding512 || pendingSugTryClip.embedding512, cat, msg => { if (st) st.textContent = msg; });
+        if (smart) {
+          stNameEl.value = smart.name;
+          stNameEl.dataset.autoNamed = '1';
+          if (st) st.textContent = `CLIP 512-D ready: ${smart.name} · warmth ${pendingSugTryClip.inferred.warmth}/5 · ${pendingSugTryClip.inferred.silhouette}`;
+        }
+      } catch (_) {}
+    }
+  });
+
   document.getElementById('btnAddSugTryOn').addEventListener('click', async () => {
+    if (pendingSugTryAnalysisPromise) {
+      const btn = document.getElementById('btnAddSugTryOn');
+      const prevTxt = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Finishing AI analysis…'; }
+      try { await pendingSugTryAnalysisPromise; } catch (_) {}
+      if (btn) { btn.disabled = false; btn.textContent = prevTxt; }
+    }
     const nameEl = document.getElementById('stName');
     const txt = document.getElementById('stClipText').value.trim();
     const st = document.getElementById('stClipStatus');
     let clipRes = pendingSugTryClip;
-    if (txt && !clipRes) {
+
+    const swRaw = document.getElementById('stWarmth').value;
+    const sfRaw = document.getElementById('stFormality').value;
+    const scRaw = document.getElementById('stComfort').value;
+    const srRaw = document.getElementById('stRain').value;
+    const sSilVal = document.getElementById('stSilhouette').value || '';
+    const sCatRaw = document.getElementById('stCategory').value;
+    const sugAttrs = {
+      name: nameEl.value.trim(),
+      category: sCatRaw,
+      warmth: swRaw === '' ? null : Number(swRaw),
+      formality: sfRaw === '' ? null : Number(sfRaw),
+      silhouette: sSilVal,
+      rain: srRaw === '' ? null : Number(srRaw),
+      clipTextNote: txt
+    };
+    const sugVecNudge = buildAttributeNudgeText(sugAttrs, !pendingSugTryPhoto);
+
+    if (sugVecNudge && (!clipRes || (clipRes.imageEmbedding512 && sugVecNudge !== txt))) {
       st.classList.remove('hidden');
-      st.textContent = 'Encoding 512-D CLIP text...';
-      try { clipRes = await analyzeImageWithClip(null, msg => { st.textContent = msg; }, txt, 1.0); } catch (err) {}
+      st.textContent = 'Updating 512-D CLIP vector with try-on attributes...';
+      try {
+        if (clipRes && clipRes.imageEmbedding512) {
+          const eng = await ensureClipLoaded(msg => { st.textContent = msg; });
+          const noteVec = txt ? await encodeClipText(txt) : null;
+          const analysisVec = blendEmbeddings512(clipRes.imageEmbedding512, noteVec, txt ? 0.35 : 0);
+          const fullVec = sugVecNudge === txt ? noteVec : await encodeClipText(sugVecNudge);
+          const blended = blendEmbeddings512(clipRes.imageEmbedding512, fullVec, 0.35);
+          const meta = inferAttributesFromEmbedding(eng, analysisVec || blended);
+          clipRes = { ...clipRes, embedding512: blended, inferred: meta.inferred, confidences: meta.confidences };
+        } else {
+          clipRes = await analyzeImageWithClip(null, msg => { st.textContent = msg; }, txt || sugVecNudge, 1.0, sugVecNudge);
+        }
+      } catch (err) {
+        st.textContent = 'Added without CLIP attribute nudge.';
+      }
     }
-    const cat = document.getElementById('stCategory').value || (clipRes && clipRes.inferred && clipRes.inferred.category) || 'top';
-    const name = nameEl.value.trim() || (txt ? txt.slice(0, 32) : `In-Store ${cat}`);
+
+    const cat = sCatRaw || (clipRes && clipRes.inferred && clipRes.inferred.category) || 'top';
+    let name = nameEl.value.trim();
+    if (!name && clipRes && (clipRes.imageEmbedding512 || clipRes.embedding512)) {
+      try {
+        const smart = await decodeSmartGarmentName(clipEngine, clipRes.imageEmbedding512 || clipRes.embedding512, cat);
+        if (smart && smart.name) name = smart.name;
+      } catch (_) {}
+    }
+    if (!name) name = txt ? txt.slice(0, 32) : `In-Store ${cat}`;
     const newId = 'try_' + Date.now();
     state.items.unshift({
-      id: newId, status: 'tryon', category: cat, name, brand: 'In-Store Try-On',
-      colorHex: pendingSugTryHex, warmth: null, formality: null, silhouette: '', fabric: '',
-      comfort: null, rain: null, price: 0, wearFreq: '', seasons: [], sizeLabel: '',
-      measurement: '', fitFeedback: 'untested', fitLength: '', fitRise: '',
+      id: newId,
+      status: 'tryon',
+      category: cat,
+      name,
+      brand: getBrandValue('stBrandSelect', 'stBrand') || 'In-Store Try-On',
+      colorHex: document.getElementById('stColorHex').value || pendingSugTryHex || '#475569',
+      warmth: swRaw === '' ? null : Number(swRaw),
+      formality: sfRaw === '' ? null : Number(sfRaw),
+      silhouette: sSilVal,
+      fabric: '',
+      comfort: scRaw === '' ? null : Number(scRaw),
+      rain: srRaw === '' ? null : Number(srRaw),
+      price: Number(document.getElementById('stPrice').value) || 0,
+      wearFreq: '',
+      seasons: [],
+      sizeLabel: document.getElementById('stSizeLabel').value.trim(),
+      measurement: '',
+      fitFeedback: document.getElementById('stFitFeedback').value || 'untested',
+      fitLength: '',
+      fitRise: '',
       photo: pendingSugTryPhoto || '',
       clipEmbedding: clipRes ? clipRes.embedding512 : null,
       clipImageEmbedding: clipRes ? (clipRes.imageEmbedding512 || clipRes.embedding512) : null,
       clipInferred: clipRes ? clipRes.inferred : null,
       clipConfidences: clipRes ? clipRes.confidences : null,
-      clipTextNote: txt, clipTextWeight: pendingSugTryPhoto ? 35 : 100
+      clipTextNote: txt,
+      clipTextWeight: pendingSugTryPhoto ? 35 : 100,
+      clipModelId: clipRes ? (clipEngine && clipEngine.modelId ? clipEngine.modelId : CLIP_MODEL_ID) : null
     });
     seedItemIds.push(newId);
     saveState();
 
     nameEl.value = '';
+    delete nameEl.dataset.autoNamed;
     document.getElementById('stCategory').value = '';
     document.getElementById('stPhoto').value = '';
     document.getElementById('stClipText').value = '';
+    setBrandValue('stBrandSelect', 'stBrand', '');
+    ['stSizeLabel','stPrice','stWarmth','stFormality','stSilhouette','stComfort','stRain'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('stFitFeedback').value = 'untested';
+    document.getElementById('stColorHex').value = '#475569';
     pendingSugTryPhoto = '';
+    pendingSugTryRawPhoto = '';
     pendingSugTryHex = '#475569';
     pendingSugTryClip = null;
+    const prev = document.getElementById('stPhotoPreview');
+    if (prev) { prev.innerHTML = ''; prev.classList.add('hidden'); prev.classList.remove('flex'); }
+    document.getElementById('btnRunSugTryRmbg').classList.add('hidden');
+    document.getElementById('btnRevertSugTryRaw').classList.add('hidden');
     st.classList.add('hidden');
     document.getElementById('sugTryOnDrawer').classList.add('hidden');
 
@@ -8513,7 +8767,9 @@
 
   document.getElementById('btnAddInspoSlot').addEventListener('click', () => {
     currentInspoSlots.push({ category: 'top', label: 'New Garment Slot', colorHex: '#475569', warmth: null, formality: null, silhouette: '', comfort: null, rain: null, textNote: '', textWeight: 40 });
+    const newIdx = currentInspoSlots.length - 1;
     renderInspoView();
+    activateInspoSlot(newIdx);
   });
 
   // Interactive Pointer Drag-to-Crop on #inspoCropCanvas
@@ -8665,8 +8921,48 @@
     const idx = Number(e.target.dataset.slot);
     if (isNaN(idx) || !currentInspoSlots[idx]) return;
     if (e.target.classList.contains('inspo-cat')) {
-      currentInspoSlots[idx].category = e.target.value;
+      const slot = currentInspoSlots[idx];
+      slot.category = e.target.value;
+      activateInspoSlot(idx);
       renderInspoView();
+      if (slot.cropThumb || slot.clipImageEmbedding || slot.clipEmbedding) {
+        (async () => {
+          const box = document.getElementById('inspoClipAnalysis');
+          if (box) {
+            box.classList.remove('hidden');
+            box.textContent = `Re-running FashionCLIP for ${slot.category}...`;
+          }
+          try {
+            const eng = await ensureClipLoaded();
+            const tw = (slot.textWeight != null ? slot.textWeight : 40) / 100;
+            const vecNudge = buildAttributeNudgeText({ ...slot, clipTextNote: slot.textNote || '' }, !slot.clipImageEmbedding && !slot.cropThumb);
+            let imgVec = slot.clipImageEmbedding || null;
+            if (!imgVec && slot.cropThumb) {
+              const res = await analyzeImageWithClip(slot.cropThumb, msg => { if (box) box.textContent = msg; }, slot.textNote || '', tw, vecNudge);
+              slot.clipEmbedding = res.embedding512;
+              slot.clipImageEmbedding = res.imageEmbedding512;
+              slot.clipInferred = res.inferred;
+              slot.clipConfidences = res.confidences;
+              imgVec = res.imageEmbedding512 || res.embedding512;
+            } else if (imgVec) {
+              const txtVec = vecNudge ? await encodeClipText(vecNudge) : null;
+              const blended = blendEmbeddings512(imgVec, txtVec, vecNudge ? tw : 0);
+              if (blended) {
+                const meta = inferAttributesFromEmbedding(eng, blended);
+                slot.clipEmbedding = blended;
+                slot.clipInferred = meta.inferred;
+                slot.clipConfidences = meta.confidences;
+              }
+            }
+            const smart = await decodeSmartGarmentName(eng, imgVec || slot.clipEmbedding, slot.category);
+            if (smart) slot.label = smart.name;
+            if (box && slot.clipInferred) {
+              box.innerHTML = `<strong>Updated ${escapeHtml(slot.category)} (512-D):</strong> ${escapeHtml(slot.label)} · Warmth ${slot.clipInferred.warmth}/5 · Formality ${slot.clipInferred.formality}/5 · ${escapeHtml(slot.clipInferred.silhouette)}`;
+            }
+            renderInspoView();
+          } catch (_) {}
+        })();
+      }
     } else if (e.target.classList.contains('inspo-attr')) {
       const attr = e.target.dataset.attr;
       const val = e.target.value;
