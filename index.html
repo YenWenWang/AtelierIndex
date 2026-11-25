@@ -6609,8 +6609,9 @@
           ${ins.photo ? `<div class="h-40 bg-white border-b border-slate-200 flex items-center justify-center overflow-hidden"><img src="${safePhotoSrc(ins.photo)}" class="w-full h-full object-contain" alt="Inspo"></div>` : ''}
           <div class="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
             <div class="space-y-1.5">
-              <div class="flex items-center justify-between gap-2">
-                <input type="text" value="${escapeHtml(ins.title)}" data-rename-inspo="${ins.id}" title="Click to rename inspo" aria-label="Inspo name" class="rename-inspo-input flex-1 min-w-0 text-xs font-bold text-slate-900 bg-transparent border border-transparent hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded px-1.5 py-0.5 -ml-1.5 outline-none transition">
+              <div class="flex items-center justify-between gap-1.5">
+                <input type="text" value="${escapeHtml(ins.title)}" data-rename-inspo="${ins.id}" placeholder="Inspo name..." title="Edit inspo name" aria-label="Inspo name" class="rename-inspo-input flex-1 min-w-0 text-xs font-bold text-slate-900 bg-white border border-slate-200 hover:border-indigo-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 rounded-md px-2 py-1 outline-none transition">
+                <button type="button" data-focus-inspo="${ins.id}" title="Rename inspo" class="focus-inspo-btn px-1.5 py-1 rounded text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 shrink-0">Rename</button>
                 <button type="button" data-del-inspo="${ins.id}" class="del-inspo-btn text-[11px] font-semibold text-rose-600 hover:text-rose-800 shrink-0">Delete</button>
               </div>
               <div class="flex flex-wrap items-center gap-1.5 text-[10px]">
@@ -6619,11 +6620,11 @@
                 <span class="text-slate-500">${escapeHtml(ins.date)} &middot; ${embCount > 0 ? `${embCount} cropped slot${embCount === 1 ? '' : 's'}` : 'whole photo'}</span>
               </div>
               <div class="flex flex-wrap gap-1 pt-1">
-                ${(ins.slots || []).map(sl => `
-                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-700">
-                    <span class="w-2 h-2 rounded-full border border-slate-300" style="background:${safeHex(sl.colorHex)}"></span>
-                    <span>${escapeHtml(sl.label)}</span>
-                  </span>
+                ${(ins.slots || []).map((sl, sIdx) => `
+                  <label class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 focus-within:border-indigo-400 text-[10px] text-slate-700">
+                    <span class="w-2 h-2 rounded-full border border-slate-300 shrink-0" style="background:${safeHex(sl.colorHex)}"></span>
+                    <input type="text" value="${escapeHtml(sl.label)}" data-rename-slot-inspo="${ins.id}" data-rename-slot-idx="${sIdx}" size="${Math.max(8, Math.min(26, (sl.label || '').length + 1))}" title="Click to rename piece" aria-label="Inspo piece name" class="rename-inspo-slot-input bg-transparent outline-none text-[10px] text-slate-700 min-w-[48px] max-w-[160px]">
+                  </label>
                 `).join('')}
               </div>
             </div>
@@ -6631,8 +6632,15 @@
         </div>
       `;
     }).join('');
+    listEl.querySelectorAll('.focus-inspo-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.focusInspo;
+        const inp = listEl.querySelector(`.rename-inspo-input[data-rename-inspo="${id}"]`);
+        if (inp) { inp.focus(); inp.select(); }
+      });
+    });
     listEl.querySelectorAll('.rename-inspo-input').forEach(inp => {
-      inp.addEventListener('change', () => {
+      const commitTitle = () => {
         const id = inp.dataset.renameInspo;
         const target = (state.inspoLogs || []).find(x => x.id === id);
         const clean = inp.value.trim();
@@ -6642,6 +6650,42 @@
           showToast(`Renamed inspo to "${target.title}".`);
         } else if (target) {
           inp.value = target.title;
+        }
+      };
+      inp.addEventListener('change', commitTitle);
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        else if (e.key === 'Escape') {
+          const target = (state.inspoLogs || []).find(x => x.id === inp.dataset.renameInspo);
+          if (target) inp.value = target.title;
+          inp.blur();
+        }
+      });
+    });
+    listEl.querySelectorAll('.rename-inspo-slot-input').forEach(inp => {
+      const commitSlot = () => {
+        const id = inp.dataset.renameSlotInspo;
+        const sIdx = Number(inp.dataset.renameSlotIdx);
+        const target = (state.inspoLogs || []).find(x => x.id === id);
+        const slot = target && target.slots && target.slots[sIdx];
+        const clean = inp.value.trim();
+        if (slot && clean && slot.label !== clean) {
+          slot.label = clean.slice(0, 60);
+          inp.size = Math.max(8, Math.min(26, slot.label.length + 1));
+          saveState();
+          showToast(`Renamed slot to "${slot.label}".`);
+        } else if (slot) {
+          inp.value = slot.label;
+        }
+      };
+      inp.addEventListener('change', commitSlot);
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        else if (e.key === 'Escape') {
+          const target = (state.inspoLogs || []).find(x => x.id === inp.dataset.renameSlotInspo);
+          const slot = target && target.slots && target.slots[Number(inp.dataset.renameSlotIdx)];
+          if (slot) inp.value = slot.label;
+          inp.blur();
         }
       });
     });
