@@ -141,31 +141,22 @@
 <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
 
   <!-- SUMMARY KPI STRIP -->
-  <section id="kpiStrip" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+  <section id="kpiStrip" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
     <div class="bg-white rounded-xl border border-slate-200 p-3.5">
       <div class="text-xs text-slate-500 font-medium">Owned Pieces</div>
       <div id="kpiOwned" class="text-2xl font-bold text-slate-900 mt-0.5">0</div>
-      <div id="kpiOwnedSub" class="text-[11px] text-slate-500 mt-0.5">0 CLIP-embedded</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-3.5">
       <div class="text-xs text-slate-500 font-medium">Future Wishlist</div>
       <div id="kpiWishlist" class="text-2xl font-bold text-blue-700 mt-0.5">0</div>
-      <div id="kpiWishlistSub" class="text-[11px] text-slate-500 mt-0.5">Potential buys tracked</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-3.5">
       <div class="text-xs text-slate-500 font-medium">Logged Outfits</div>
       <div id="kpiLogs" class="text-2xl font-bold text-slate-900 mt-0.5">0</div>
-      <div id="kpiThermal" class="text-[11px] text-slate-500 mt-0.5">Thermal offset: 0°F</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-3.5">
-      <div class="text-xs text-slate-500 font-medium">Avg Closet Certainty</div>
-      <div id="kpiCert" class="text-2xl font-bold text-orange-700 mt-0.5">0%</div>
-      <div id="kpiCertSub" class="text-[11px] text-slate-500 mt-0.5">Grows with CLIP + logs</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 p-3.5 col-span-2 md:col-span-1">
       <div class="text-xs text-slate-500 font-medium">Retire Flags</div>
       <div id="kpiRetire" class="text-2xl font-bold text-rose-700 mt-0.5">0</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">High-certainty low-fit</div>
     </div>
   </section>
 
@@ -592,40 +583,24 @@
   <section id="view-retire" class="view-section hidden space-y-5">
     <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-4">
       <div>
-        <h2 class="text-base font-bold text-slate-900">Season-Aware Retire &amp; Donate Audit</h2>
-        <p class="text-xs text-slate-600 mt-1 max-w-3xl">When an item is rarely worn, the audit checks whether it is simply <strong>out of season</strong> first—instead of pushing you to discard seasonal staples prematurely.</p>
+        <h2 class="text-base font-bold text-slate-900">Retire &amp; Donate Audit</h2>
+        <p class="text-xs text-slate-600 mt-1 max-w-3xl">Year-round audit combining in-season wear frequency, comfort, style compatibility, and same-season duplicate clusters—protecting high-style and special-occasion pieces.</p>
       </div>
-      <div class="flex flex-wrap items-center gap-4">
-        <div class="flex items-center gap-2">
-          <label for="retireSeasonSelect" class="text-xs font-semibold text-slate-700">Audit Season:</label>
-          <select id="retireSeasonSelect" class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white font-semibold text-slate-800">
-            <option value="spring">Spring</option>
-            <option value="summer">Summer</option>
-            <option value="fall" selected>Fall</option>
-            <option value="winter">Winter</option>
-          </select>
-        </div>
-        <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
-          <label for="retireThresholdSlider" class="text-xs font-semibold text-slate-700 whitespace-nowrap">Retire Threshold:</label>
-          <input type="range" id="retireThresholdSlider" min="25" max="85" value="50" class="w-28 accent-rose-600">
-          <span id="retireThresholdVal" class="text-xs font-bold text-rose-700 w-9 text-right">50%</span>
-        </div>
+      <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+        <label for="retireThresholdSlider" class="text-xs font-semibold text-slate-700 whitespace-nowrap">Retire Threshold:</label>
+        <input type="range" id="retireThresholdSlider" min="25" max="85" value="50" class="w-28 accent-rose-600">
+        <span id="retireThresholdVal" class="text-xs font-bold text-rose-700 w-9 text-right">50%</span>
       </div>
     </div>
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div class="space-y-3">
         <h3 class="text-sm font-bold text-rose-800">Retire / Donate Candidates</h3>
-        <p class="text-[11px] text-slate-500">Low use while in-season, or uncomfortable / weak compatibility.</p>
+        <p class="text-[11px] text-slate-500">Uncomfortable, weak style compatibility, redundant twins, or never worn.</p>
         <div id="retireHighList" class="space-y-3"></div>
       </div>
       <div class="space-y-3">
-        <h3 class="text-sm font-bold text-blue-800">Seasonal Hold (Out of Season)</h3>
-        <p class="text-[11px] text-slate-500">Rarely worn now, but belongs to another season—re-check then.</p>
-        <div id="retireSeasonalList" class="space-y-3"></div>
-      </div>
-      <div class="space-y-3">
         <h3 class="text-sm font-bold text-amber-800">Under-Tested (Try First)</h3>
-        <p class="text-[11px] text-slate-500">Frequency unset or low certainty—test before deciding.</p>
+        <p class="text-[11px] text-slate-500">Wear frequency unset or low certainty—try styling before deciding.</p>
         <div id="retireTestList" class="space-y-3"></div>
       </div>
     </div>
@@ -2266,8 +2241,7 @@
   }
 
   function getCurrentAuditSeason() {
-    const el = document.getElementById('retireSeasonSelect');
-    if (el && el.value) return el.value;
+
     const m = new Date().getMonth();
     if (m >= 2 && m <= 4) return 'spring';
     if (m >= 5 && m <= 7) return 'summer';
@@ -3971,28 +3945,13 @@
     if (wCityEl && document.activeElement !== wCityEl) wCityEl.value = getSavedCity();
     const owned = state.items.filter(i => i.status === 'owned');
     const wish = state.items.filter(i => i.status === 'wishlist');
-    const clipCount = state.items.filter(i => Array.isArray(i.clipEmbedding) && i.clipEmbedding.length === 512).length;
     const pre = makePrecomputedModels();
-    const evals = owned.map(it => evaluateSingleItem(it, pre));
-    const avgCert = evals.length ? Math.round(evals.reduce((a, e) => a + e.certainty, 0) / evals.length) : 0;
-    const curSeason = getCurrentAuditSeason();
-    const retireCount = owned.filter((it, idx) => {
-      const freq = getItemWearFreq(it);
-      const inSeason = getItemSeasons(it).list.includes(curSeason);
-      const poorFit = (it.comfort !== null && it.comfort <= 2) || (evals[idx].score < 64 && evals[idx].certainty >= 60);
-      const lowUseInSeason = (freq === 'never' || freq === 'rare') && inSeason && evals[idx].certainty >= 50;
-      return poorFit || lowUseInSeason;
-    }).length;
-    const offset = getPersonalThermalOffset();
+    const audit = computeRetireAudit(owned, pre);
 
     document.getElementById('kpiOwned').textContent = owned.length;
-    document.getElementById('kpiOwnedSub').textContent = `${clipCount} with CLIP 512-D vectors`;
     document.getElementById('kpiWishlist').textContent = wish.length;
     document.getElementById('kpiLogs').textContent = state.outfitLogs.length;
-    const thermLogs = state.outfitLogs.filter(l => l.thermal && l.thermal !== 'unknown').length;
-    document.getElementById('kpiThermal').textContent = `Dual Ridge: ${thermLogs} thermal log${thermLogs === 1 ? '' : 's'}`;
-    document.getElementById('kpiCert').textContent = `${avgCert}%`;
-    document.getElementById('kpiRetire').textContent = retireCount;
+    document.getElementById('kpiRetire').textContent = audit.highRetire.length;
   }
 
   function renderClosetView() {
@@ -5913,21 +5872,13 @@
   }
 
   // ---------- SEASON-AWARE RETIRE / DONATE (MULTIPLICATIVE RISK CURVES) ----------
-  function renderRetireView() {
-    const owned = state.items.filter(i => i.status === 'owned');
-    const pre = makePrecomputedModels();
-    const curSeason = getCurrentAuditSeason();
-    const curLabel = curSeason.charAt(0).toUpperCase() + curSeason.slice(1);
+  function computeRetireAudit(owned, pre) {
     const sliderEl = document.getElementById('retireThresholdSlider');
     const threshold = sliderEl ? Number(sliderEl.value) : 50;
-    const valEl = document.getElementById('retireThresholdVal');
-    if (valEl) valEl.textContent = `${threshold}%`;
 
-    // Usage curve U (distinct protection for Heavy Staple vs Regular!)
     const usageCurve = { staple: 0.12, regular: 0.32, rare: 0.60, never: 0.90, '': 0.35 };
     const freqRank = { staple: 4, regular: 3, rare: 2, never: 1, '': 0 };
 
-    // Cluster redundancy curve R(twinCount): 1 twin (2 total) is low for laundry rotation; 2+ twins ramps smoothly
     function redundancyCurve(twinCount) {
       if (twinCount <= 0) return 0;
       if (twinCount === 1) return 0.20;
@@ -5940,23 +5891,18 @@
       const ev = evaluateSingleItem(it, pre);
       const freq = getItemWearFreq(it);
       const sInfo = getItemSeasons(it);
-      const inSeason = sInfo.list.includes(curSeason);
-      return { it, ev, freq, sInfo, inSeason };
+      return { it, ev, freq, sInfo };
     });
 
     const highRetire = [];
-    const seasonalHold = [];
     const testFirst = [];
 
     scored.forEach(entry => {
-      const { it, ev, freq, sInfo, inSeason } = entry;
-      const isLowUse = freq === 'never' || freq === 'rare';
+      const { it, ev, freq, sInfo } = entry;
       const U = usageCurve[freq] ?? 0.35;
-      const S = inSeason ? 1.0 : 0.45;
       const red = ev.redundancy;
       const twinCount = red ? (red.twinCount || 0) : 0;
 
-      // Protect the #1 keeper in a redundant cluster (highest wear frequency, then comfort, then style)
       let isClusterKeeper = false;
       if (twinCount > 0 && red.twins) {
         const myRank = freqRank[freq] * 100 + (it.comfort || 3) * 10 + (ev.score || 60) * 0.1;
@@ -5969,8 +5915,6 @@
       const R = redundancyCurve(twinCount) * (isClusterKeeper ? 0.40 : 1.0);
       const rainDamp = (Number(effAttr(it, 'rain', 0)) === 1 && freq !== 'never') ? 0.80 : 1.0;
 
-      // Quality & Special-Occasion Protection: good, comfortable pieces worn "Rarely" (e.g. suits, statement pieces)
-      // should be KEPT rather than flagged solely for low wear frequency!
       const isComfy = it.comfort === null || it.comfort === '' || Number(it.comfort) >= 3;
       const itemForm = Number(effAttr(it, 'formality', 3));
       let qualityDamp = 1.0;
@@ -5979,10 +5923,10 @@
         else if (ev.score >= 72 || ev.strongPairs >= 2) qualityDamp = 0.45;
       }
 
-      const riskUnderuse = freq ? (U * S * rainDamp * qualityDamp) : 0;
-      const riskCrowd = R * (0.35 + 0.65 * U) * (0.65 + 0.35 * S);
+      // Year-round audit: wear frequency already reflects in-season usage (no calendar-season double counting)
+      const riskUnderuse = freq ? (U * rainDamp * qualityDamp) : 0;
+      const riskCrowd = R * (0.35 + 0.65 * U);
 
-      // Discomfort or orphan curve (season-independent)
       let P = 0;
       if (it.comfort !== null && it.comfort <= 1) P = 0.95;
       else if (it.comfort !== null && it.comfort <= 2) P = 0.70;
@@ -5992,36 +5936,41 @@
 
       const retireRisk = Math.round(100 * (1 - (1 - P) * (1 - riskUnderuse) * (1 - riskCrowd)));
       entry.retireRisk = retireRisk;
-      const nextS = sInfo.list.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' / ');
+      const seasonLbl = sInfo.list.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(' / ');
 
       const drivers = [];
       if (it.comfort !== null && it.comfort <= 2) drivers.push(`uncomfortable (${it.comfort}/5)`);
       else if (P > 0) drivers.push(`low pairwise style (${ev.score}/100, 0 strong pairs)`);
       if (twinCount > 0 && red.twin) {
-        drivers.push(`${twinCount + 1} similar ${it.category}s in ${nextS} (closest: ${red.twin.name} ~${red.simPct}%)`);
+        drivers.push(`${twinCount + 1} similar ${it.category}s in ${seasonLbl} (closest: ${red.twin.name} ~${red.simPct}%)`);
       }
-      if (isLowUse) drivers.push(`marked "${FREQ_LABELS[freq]}"${inSeason ? ` in ${curLabel}` : ` (out of season: ${nextS})`}`);
-      else if (freq) drivers.push(`marked "${FREQ_LABELS[freq]}"`);
+      if (freq) drivers.push(`marked "${FREQ_LABELS[freq]}"`);
 
       if (retireRisk >= threshold) {
         entry.reason = `Retire Risk ${retireRisk}% (≥ ${threshold}%): ${drivers.join(' · ')}.`;
         if (ev.certainty >= 50) highRetire.push(entry);
         else testFirst.push(entry);
-      } else if (!inSeason && (freq === 'never' || P > 0 || twinCount > 0 || retireRisk >= 30 || !freq)) {
-        entry.reason = freq
-          ? `Retire Risk ${retireRisk}% (< ${threshold}%) — "${FREQ_LABELS[freq]}", out of season (${nextS}). Re-check in ${nextS}.`
-          : `Out-of-season ${nextS} piece with unset wear frequency—held until ${nextS}.`;
-        seasonalHold.push(entry);
-      } else if (inSeason && (!freq || ev.certainty < 50)) {
+      } else if (!freq || ev.certainty < 50) {
         entry.reason = !freq
-          ? `Active in ${curLabel}, wear frequency not set yet (${ev.completeness}% profile completeness · ${ev.strongPairs} strong pairs).`
+          ? `Wear frequency not set yet (${ev.completeness}% profile completeness · ${ev.strongPairs} strong pairs).`
           : `Low certainty (${ev.certainty}%)—try styling once before judging (Retire Risk ${retireRisk}%).`;
         testFirst.push(entry);
       }
     });
 
+    return { highRetire, testFirst, threshold };
+  }
+
+  function renderRetireView() {
+    const owned = state.items.filter(i => i.status === 'owned');
+    const pre = makePrecomputedModels();
+    const { highRetire, testFirst, threshold } = computeRetireAudit(owned, pre);
+    const valEl = document.getElementById('retireThresholdVal');
+    if (valEl) valEl.textContent = `${threshold}%`;
+    const kpiRetireEl = document.getElementById('kpiRetire');
+    if (kpiRetireEl) kpiRetireEl.textContent = highRetire.length;
+
     highRetire.sort((a, b) => b.retireRisk - a.retireRisk);
-    seasonalHold.sort((a, b) => b.retireRisk - a.retireRisk);
     testFirst.sort((a, b) => b.retireRisk - a.retireRisk);
 
     const highEl = document.getElementById('retireHighList');
@@ -6036,21 +5985,7 @@
         </div>
         ${renderDualBars(retireRisk, ev.certainty, 'Retire Risk')}
       </div>
-    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No items above the ${threshold}% Retire Risk threshold for ${curLabel}—lower the slider to audit more aggressively.</div>`;
-
-    const seaEl = document.getElementById('retireSeasonalList');
-    seaEl.innerHTML = seasonalHold.length ? seasonalHold.map(({ it, ev, retireRisk, reason }) => `
-      <div class="bg-white rounded-xl border border-blue-200 p-4 space-y-2.5">
-        <div class="flex items-start justify-between gap-2">
-          <div>
-            <h4 class="text-sm font-bold text-slate-900">${escapeHtml(it.name)}</h4>
-            <p class="text-xs text-blue-800 mt-0.5">${escapeHtml(reason)}</p>
-          </div>
-          <button type="button" data-action="edit" data-id="${it.id}" class="item-act px-2.5 py-1 rounded-lg border border-blue-200 text-blue-800 text-[11px] font-semibold shrink-0">Edit</button>
-        </div>
-        ${renderDualBars(retireRisk, ev.certainty, 'Retire Risk')}
-      </div>
-    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No out-of-season items held right now.</div>`;
+    `).join('') : `<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-500">No items above the ${threshold}% Retire Risk threshold—lower the slider to audit more aggressively.</div>`;
 
     const testEl = document.getElementById('retireTestList');
     testEl.innerHTML = testFirst.length ? testFirst.map(({ it, ev, retireRisk, reason }) => `
@@ -8660,7 +8595,6 @@
     else sizePairIds.add(id);
     renderSizingView();
   });
-  document.getElementById('retireSeasonSelect').addEventListener('change', () => { renderKPIs(); renderRetireView(); });
   document.getElementById('recencyDecaySelect').addEventListener('change', e => {
     state.settings = state.settings || {};
     state.settings.recencyHalfLife = Number(e.target.value);
