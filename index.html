@@ -685,21 +685,15 @@
             <div id="inspoSlotControls" class="space-y-2.5"></div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 pt-2">
-            <div>
-              <label for="inspoTemp" class="block text-[11px] font-medium text-slate-600 mb-1">Target Feels-Like (°F)</label>
-              <input type="number" id="inspoTemp" value="56" min="15" max="95" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
-            </div>
-            <div>
-              <label for="inspoOccasion" class="block text-[11px] font-medium text-slate-600 mb-1">Target Formality (1–5)</label>
-              <select id="inspoOccasion" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
-                <option value="1">1 · Lounge / Active</option>
-                <option value="2">2 · Casual</option>
-                <option value="3" selected>3 · Smart Casual</option>
-                <option value="4">4 · Tailored / Office</option>
-                <option value="5">5 · Formal / Black-Tie</option>
-              </select>
-            </div>
+          <div class="pt-2">
+            <label for="inspoOccasion" class="block text-[11px] font-medium text-slate-600 mb-1">Target Formality (1–5)</label>
+            <select id="inspoOccasion" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
+              <option value="1">1 · Lounge / Active</option>
+              <option value="2">2 · Casual</option>
+              <option value="3" selected>3 · Smart Casual</option>
+              <option value="4">4 · Tailored / Office</option>
+              <option value="5">5 · Formal / Black-Tie</option>
+            </select>
           </div>
 
 
@@ -6397,7 +6391,7 @@
   }
 
   function runInspoEvaluation() {
-    const temp = Number(document.getElementById('inspoTemp').value) || 56;
+    const temp = 58;
     const occasion = document.getElementById('inspoOccasion').value || '3';
     const owned = state.items.filter(i => i.status === 'owned');
 
@@ -9034,7 +9028,7 @@
     }
   });
 
-  ['inspoTemp', 'inspoOccasion'].forEach(id => {
+  ['inspoOccasion'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('input', runInspoEvaluation);
