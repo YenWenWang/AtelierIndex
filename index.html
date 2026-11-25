@@ -453,7 +453,8 @@
           <h3 class="text-sm font-bold text-slate-900">Style-Around &amp; Exclude Tray (Optional)</h3>
           <p class="text-xs text-slate-500">Anchor 1+ pieces to build around them, or <strong>Exclude</strong> pieces (e.g., in the laundry or not today) so they never appear in suggestions.</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" id="btnWearOnlyTray" aria-pressed="false" title="Evaluate only the exact pieces in your tray without adding other closet items" class="px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold transition">Wear Only in Tray</button>
           <button type="button" id="btnToggleSugTryOn" class="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 hover:bg-purple-100 text-purple-800 text-[11px] font-semibold transition">+ In-Store Try-On Anchor</button>
           <button type="button" id="btnClearSeedTray" class="text-xs text-slate-500 hover:text-slate-900">Clear Tray</button>
         </div>
@@ -4263,40 +4264,24 @@
   function renderManualScore() {
     const ctx = getCurrentContext();
     const items = builderItemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
-    const res = evaluateOutfit(items, ctx);
     const box = document.getElementById('manualScoreBox');
     if (items.length < 2) {
-      box.innerHTML = `<p class="text-xs text-slate-500">Add at least 2 items to your tray (even an exact 2-piece pair) to calculate Score &amp; Certainty.</p>`;
+      box.innerHTML = `<p class="text-xs text-slate-500">Add at least 2 pieces to build a look and log it.</p>`;
       return;
     }
     box.innerHTML = `
-      <div class="space-y-1.5">
-        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
-          <span class="font-semibold text-slate-700">Style</span>
-          <div class="meter-track"><div class="meter-score" style="width:${res.styleScore}%"></div></div>
-          <span class="font-bold text-blue-800 text-right">${res.styleScore}</span>
-        </div>
-        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
-          <span class="font-semibold text-slate-700">Comfort</span>
-          <div class="meter-track"><div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#059669,#34D399);width:${res.comfortScore ?? res.breakdown.comfort}%"></div></div>
-          <span class="font-bold text-emerald-800 text-right">${res.comfortScore ?? res.breakdown.comfort}</span>
-        </div>
-        <div class="grid grid-cols-[68px_1fr_34px] items-center gap-2 text-[11px]">
-          <span class="font-semibold text-slate-700">Certainty</span>
-          <div class="meter-track"><div class="meter-cert" style="width:${res.certainty}%"></div></div>
-          <span class="font-bold text-orange-800 text-right">${res.certainty}%</span>
-        </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" id="btnRateManual" class="flex-1 py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition">Log &amp; Rate This Combo</button>
+        <button type="button" id="btnSendToSugTray" class="py-2 px-3 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-semibold transition">Score in Suggestions &rarr;</button>
       </div>
-      <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span class="px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-semibold">Thermal Sweet Spot: ~${res.idealTemp}°F</span>
-        <span class="text-slate-500">Style is pure aesthetic + formality (comfort &amp; weather separate)</span>
-      </div>
-      <ul class="space-y-1 text-xs text-slate-600 pt-1">
-        ${res.reasons.map(r => `<li class="flex gap-1.5"><span class="text-blue-700 font-bold">&bull;</span><span>${escapeHtml(r)}</span></li>`).join('')}
-      </ul>
-      <button type="button" id="btnRateManual" class="w-full py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition">Log &amp; Rate This Combo</button>
     `;
     document.getElementById('btnRateManual').addEventListener('click', () => openRateModal(builderItemIds.slice(), ctx));
+    document.getElementById('btnSendToSugTray').addEventListener('click', () => {
+      seedItemIds = builderItemIds.slice();
+      wearOnlyInTray = true;
+      updateWearOnlyTrayBtn();
+      switchTab('suggestions');
+    });
   }
 
   function renderSeedTray() {
@@ -4459,12 +4444,74 @@
   }
 
   // Two-stage Layered Beam Search Generator (respects Style-Around Anchor Tray!)
+  let wearOnlyInTray = false;
+
+  function updateWearOnlyTrayBtn() {
+    const btn = document.getElementById('btnWearOnlyTray');
+    if (!btn) return;
+    btn.setAttribute('aria-pressed', wearOnlyInTray ? 'true' : 'false');
+    btn.className = wearOnlyInTray
+      ? 'px-2.5 py-1 rounded-lg bg-blue-700 border border-blue-700 hover:bg-blue-800 text-white text-[11px] font-semibold transition shadow-sm'
+      : 'px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold transition';
+  }
+
   function renderGeneratedOutfits() {
     renderSeedTray();
+    updateWearOnlyTrayBtn();
     const ctx = getCurrentContext();
     const excludedSet = new Set(excludedSugItemIds);
     const pool = state.items.filter(i => !excludedSet.has(i.id) && (i.status === 'owned' || (ctx.includeWishlist && i.status === 'wishlist')));
     const seeds = seedItemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
+
+    if (wearOnlyInTray) {
+      const list = document.getElementById('generatedOutfitsList');
+      if (seeds.length < 2) {
+        list.innerHTML = `<div class="bg-white rounded-xl border border-blue-200 p-6 text-xs text-slate-600"><strong>Wear Only in Tray</strong> is active &mdash; add at least 2 pieces to your tray above to see Style, Weather, Comfort, and Certainty for those exact pieces alone.</div>`;
+        return;
+      }
+      const pre = makePrecomputedModels();
+      const ev = evaluateOutfitWithSwing(seeds, ctx, pre);
+      const idsAttr = seeds.map(i => i.id).join(',');
+      list.innerHTML = `
+        <div class="bg-white rounded-xl border-2 border-blue-200 p-4 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-900">Your Tray Only (${seeds.length} pieces)</span>
+              <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[10px] font-semibold">Exact Tray Evaluation</span>
+              ${seeds.some(i => i.status === 'wishlist') ? `<span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[10px] font-semibold">Includes Wishlist</span>` : ''}
+            </div>
+            <button type="button" data-ids="${idsAttr}" class="gen-rate-btn px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-semibold">Wear &amp; Rate &rarr;</button>
+          </div>
+          ${renderInteractiveCardLookbook('sug', idsAttr, seeds, 'h-48')}
+          <div class="flex flex-wrap gap-1.5">
+            ${seeds.map(it => `
+              <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-800">
+                <span class="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0" style="background:${safeHex(it.colorHex)}"></span>
+                <span>${escapeHtml(it.name)}</span>
+              </span>
+            `).join('')}
+          </div>
+          ${ev.swingInfo ? `<div class="px-2.5 py-1.5 rounded-lg bg-teal-50/80 border border-teal-200 text-[11px] text-teal-950">
+            <strong>${ev.swingInfo.tLow}°F &rarr; ${ev.swingInfo.tHigh}°F Layering:</strong>
+            ${ev.swingInfo.removedNames.length
+              ? `Full look (~${ev.swingInfo.fullIdeal}°F, Style ${ev.swingInfo.fullStyle}) &rarr; Take off <strong>${escapeHtml(ev.swingInfo.removedNames.join(' + '))}</strong> (~${ev.swingInfo.strippedIdeal}°F, Style ${ev.swingInfo.strippedStyle})`
+              : `No removable layer &mdash; single-state outfit (~${ev.swingInfo.fullIdeal}°F)`}
+          </div>` : ''}
+          ${renderSplitBars(ev.styleScore ?? ev.score, ev.weatherScore ?? (ev.breakdown.thermal || 60), ev.certainty, ev.swingInfo ? 'Swing' : (ctx.weather === 'indoor' ? 'Indoor' : 'Weather'), ev.comfortScore ?? ev.breakdown.comfort)}
+          <ul class="space-y-1 text-xs text-slate-600 pt-1">
+            ${(ev.reasons || []).map(r => `<li class="flex gap-1.5"><span class="text-blue-700 font-bold">&bull;</span><span>${escapeHtml(r)}</span></li>`).join('')}
+          </ul>
+        </div>
+      `;
+      list.querySelectorAll('.gen-rate-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const ids = btn.dataset.ids.split(',').filter(Boolean);
+          openRateModal(ids, ctx);
+        });
+      });
+      attachInteractiveCardLookbooks(list);
+      return;
+    }
     const seedIdsSet = new Set(seeds.map(x => x.id));
 
     const seedByCat = cat => seeds.filter(x => x.category === cat);
@@ -6994,6 +7041,12 @@
     const rm = e.target.closest('.seed-rm');
     if (!rm) return;
     seedItemIds = seedItemIds.filter(x => x !== rm.dataset.seedRm);
+    renderGeneratedOutfits();
+  });
+
+  document.getElementById('btnWearOnlyTray').addEventListener('click', () => {
+    wearOnlyInTray = !wearOnlyInTray;
+    updateWearOnlyTrayBtn();
     renderGeneratedOutfits();
   });
 
