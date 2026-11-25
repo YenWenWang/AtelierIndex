@@ -1520,6 +1520,7 @@
           transformers = await import(TRANSFORMERS_CLIP_CDN);
           transformers.env.allowLocalModels = false;
           transformers.env.useBrowserCache = true;
+          try { if (transformers.env.backends && transformers.env.backends.onnx && transformers.env.backends.onnx.wasm) transformers.env.backends.onnx.wasm.proxy = true; } catch (_) {}
           const progressCb = makeProgressCb('FashionCLIP');
           [processor, tokenizer, visionModel, textModel] = await Promise.all([
             transformers.AutoProcessor.from_pretrained(CLIP_MODEL_ID),
@@ -1584,6 +1585,14 @@
         clipEngine.cloPromptEmbeddings = cloTexts.map((_, i) =>
           l2Normalize(cloEmbeds.data.slice(i * cDim, (i + 1) * cDim))
         );
+
+        // Cache encoded prompt metadata in IndexedDB so Gap Analysis can run instantly on future visits without waiting for ONNX
+        idbPutKey(`prompt_meta_v3_${loadedModelId}`, {
+          activeModelId: loadedModelId,
+          promptEmbeddings: clipEngine.promptEmbeddings,
+          styleProbeEmbeddings: clipEngine.styleProbeEmbeddings,
+          cloPromptEmbeddings: clipEngine.cloPromptEmbeddings
+        });
 
         updateClipUI('ready', loadedModelId === CLIP_MODEL_ID ? 'FashionCLIP Ready' : 'CLIP-ViT-B/32 Ready');
         return clipEngine;
@@ -1761,19 +1770,124 @@
     };
   }
 
-  // ---------- IN-BROWSER NEURAL BACKGROUND REMOVAL (briaai/RMBG-1.4) ----------
+  // ---------- IN-BROWSER NEURAL BACKGROUND REMOVAL (briaai/RMBG-1.4 IN BACKGROUND WORKER) ----------
   const rmbgEngine = {
     status: 'idle',
     loadingPromise: null,
     model: null,
     processor: null,
-    RawImage: null
+    RawImage: null,
+    worker: null,
+    workerFailed: false,
+    pendingJobs: new Map(),
+    jobSeq: 0
   };
 
-  async function ensureRmbgLoaded(onProgress) {
-    if (rmbgEngine.status === 'ready') return rmbgEngine;
-    if (rmbgEngine.loadingPromise) return rmbgEngine.loadingPromise;
+  function buildRmbgWorkerSrc() {
+    return `
+      import * as transformers from '${TRANSFORMERS_CDN}';
+      transformers.env.allowLocalModels = false;
+      transformers.env.useBrowserCache = true;
+      let model = null, processor = null, loadPromise = null;
+      async function ensureLoaded(jobId) {
+        if (model && processor) return;
+        if (!loadPromise) {
+          loadPromise = (async () => {
+            const progressCb = info => {
+              if (info && info.status === 'progress' && typeof info.progress === 'number') {
+                self.postMessage({ type: 'progress', jobId, msg: 'Downloading RMBG-1.4: ' + Math.round(info.progress) + '%' });
+              }
+            };
+            const [m, p] = await Promise.all([
+              transformers.AutoModel.from_pretrained('${RMBG_MODEL_ID}', {
+                config: { model_type: 'custom' },
+                progress_callback: progressCb
+              }),
+              transformers.AutoProcessor.from_pretrained('${RMBG_MODEL_ID}', {
+                config: {
+                  do_normalize: true, do_pad: false, do_rescale: true, do_resize: true,
+                  image_mean: [0.5, 0.5, 0.5], feature_extractor_type: 'ImageFeatureExtractor',
+                  image_std: [1, 1, 1], resample: 2,
+                  rescale_factor: 0.00392156862745098, size: { width: 1024, height: 1024 }
+                }
+              })
+            ]);
+            model = m; processor = p;
+          })().catch(err => { loadPromise = null; throw err; });
+        }
+        await loadPromise;
+      }
+      self.onmessage = async e => {
+        const { type, jobId, rawDataUrl } = e.data;
+        try {
+          await ensureLoaded(jobId);
+          if (type === 'warmup') {
+            self.postMessage({ type: 'done', jobId });
+            return;
+          }
+          self.postMessage({ type: 'progress', jobId, msg: 'Removing background in background thread...' });
+          const image = await transformers.RawImage.fromURL(rawDataUrl);
+          const { pixel_values } = await processor(image);
+          const { output } = await model({ input: pixel_values });
+          const mask = await transformers.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(image.width, image.height);
+          const maskCopy = new Uint8Array(mask.data);
+          self.postMessage({ type: 'mask', jobId, width: image.width, height: image.height, maskData: maskCopy }, [maskCopy.buffer]);
+        } catch (err) {
+          self.postMessage({ type: 'error', jobId, error: String(err && err.message || err) });
+        }
+      };
+    `;
+  }
 
+  function getOrStartRmbgWorker() {
+    if (rmbgEngine.workerFailed || typeof Worker === 'undefined') return null;
+    if (rmbgEngine.worker) return rmbgEngine.worker;
+    try {
+      const url = URL.createObjectURL(new Blob([buildRmbgWorkerSrc()], { type: 'application/javascript' }));
+      const w = new Worker(url, { type: 'module' });
+      w.onmessage = ev => {
+        const d = ev.data || {};
+        const job = rmbgEngine.pendingJobs.get(d.jobId);
+        if (!job) return;
+        if (d.type === 'progress') {
+          if (job.onProgress) job.onProgress(d.msg);
+        } else if (d.type === 'mask' || d.type === 'done') {
+          rmbgEngine.pendingJobs.delete(d.jobId);
+          rmbgEngine.status = 'ready';
+          job.resolve(d);
+        } else if (d.type === 'error') {
+          rmbgEngine.pendingJobs.delete(d.jobId);
+          job.reject(new Error(d.error || 'RMBG worker error'));
+        }
+      };
+      w.onerror = () => {
+        rmbgEngine.workerFailed = true;
+        try { w.terminate(); } catch (_) {}
+        rmbgEngine.worker = null;
+        rmbgEngine.pendingJobs.forEach(j => j.reject(new Error('RMBG worker blocked')));
+        rmbgEngine.pendingJobs.clear();
+      };
+      rmbgEngine.worker = w;
+      return w;
+    } catch (_) {
+      rmbgEngine.workerFailed = true;
+      return null;
+    }
+  }
+
+  function runRmbgWorkerJob(payload, onProgress) {
+    const w = getOrStartRmbgWorker();
+    if (!w) return Promise.reject(new Error('No RMBG worker'));
+    const jobId = ++rmbgEngine.jobSeq;
+    return new Promise((resolve, reject) => {
+      rmbgEngine.pendingJobs.set(jobId, { resolve, reject, onProgress });
+      w.postMessage({ ...payload, jobId });
+    });
+  }
+
+  async function ensureRmbgLoadedMain(onProgress) {
+    if (rmbgEngine.model && rmbgEngine.processor) return rmbgEngine;
+    if (rmbgEngine.loadingPromise) return rmbgEngine.loadingPromise;
     rmbgEngine.loadingPromise = (async () => {
       try {
         rmbgEngine.status = 'loading';
@@ -1781,6 +1895,7 @@
         const transformers = await import(TRANSFORMERS_CDN);
         transformers.env.allowLocalModels = false;
         transformers.env.useBrowserCache = true;
+        try { if (transformers.env.backends && transformers.env.backends.onnx && transformers.env.backends.onnx.wasm) transformers.env.backends.onnx.wasm.proxy = true; } catch (_) {}
 
         const progressCb = info => {
           if (info && info.status === 'progress' && typeof info.progress === 'number' && onProgress) {
@@ -1823,23 +1938,39 @@
     return rmbgEngine.loadingPromise;
   }
 
-  // Runs RMBG-1.4 -> returns { cutoutPng (transparent PNG), clipInputJpg (on clean white studio bg), dominantHex }
-  async function runRmbgCutout(rawDataUrl, onProgress) {
-    const eng = await ensureRmbgLoaded(onProgress);
-    if (onProgress) onProgress('Running RMBG-1.4 neural background removal...');
-    const image = await eng.RawImage.fromURL(rawDataUrl);
-    const { pixel_values } = await eng.processor(image);
-    const { output } = await eng.model({ input: pixel_values });
-    const mask = await eng.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(image.width, image.height);
+  async function ensureRmbgLoaded(onProgress) {
+    if (rmbgEngine.status === 'ready') return rmbgEngine;
+    try {
+      await runRmbgWorkerJob({ type: 'warmup' }, onProgress);
+      return rmbgEngine;
+    } catch (_) {
+      return ensureRmbgLoadedMain(onProgress);
+    }
+  }
 
-    // Draw original image onto canvas & apply neural alpha mask
+  // Runs RMBG-1.4 (off-thread in Worker so UI never freezes!) -> returns { cutoutPng, clipInputJpg, dominantHex }
+  async function runRmbgCutout(rawDataUrl, onProgress) {
+    let w, h, maskData;
+    try {
+      const res = await runRmbgWorkerJob({ type: 'cutout', rawDataUrl }, onProgress);
+      w = res.width; h = res.height; maskData = res.maskData;
+    } catch (_) {
+      const eng = await ensureRmbgLoadedMain(onProgress);
+      if (onProgress) onProgress('Running RMBG-1.4 neural background removal...');
+      const image = await eng.RawImage.fromURL(rawDataUrl);
+      const { pixel_values } = await eng.processor(image);
+      const { output } = await eng.model({ input: pixel_values });
+      const mask = await eng.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(image.width, image.height);
+      w = image.width; h = image.height; maskData = mask.data;
+    }
+
+    // Draw original image onto canvas & apply neural alpha mask (<5ms on main thread)
     const srcImg = await new Promise((resolve, reject) => {
       const im = new Image();
       im.onload = () => resolve(im);
       im.onerror = reject;
       im.src = rawDataUrl;
     });
-    const w = image.width, h = image.height;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const ctx = c.getContext('2d');
@@ -1849,8 +1980,8 @@
 
     let minX = w, minY = h, maxX = 0, maxY = 0;
     let rSum = 0, gSum = 0, bSum = 0, fgCnt = 0;
-    for (let i = 0; i < mask.data.length; i++) {
-      const alpha = mask.data[i];
+    for (let i = 0; i < maskData.length; i++) {
+      const alpha = maskData[i];
       d[i * 4 + 3] = alpha;
       if (alpha > 128) {
         const x = i % w, y = (i - x) / w;
@@ -1991,6 +2122,30 @@
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+  }
+
+  async function idbGetKey(key) {
+    try {
+      const db = await openClosetDB();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (_) { return null; }
+  }
+
+  async function idbPutKey(key, val) {
+    try {
+      const db = await openClosetDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        const req = tx.objectStore(IDB_STORE).put(val, key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (_) {}
   }
 
   async function idbGetMain() {
@@ -2963,13 +3118,18 @@
     const comfortFinal = Math.max(15, Math.min(100, Math.round(comfortScore)));
     const finalScore = Math.round(styleScore * 0.50 + weatherScore * 0.30 + comfortFinal * 0.20);
 
-    // 6. Certainty (0–100%)
+    // 6. Certainty (0–100%): overall certainty + pure styleCertainty (not masked by thermalCert!)
     const avgComp = items.reduce((a, it) => a + itemCompleteness(it), 0) / items.length;
     const wornRatio = items.filter(it => getItemWearFreq(it) !== '').length / items.length;
     const ridgeCert = Math.max(aesRidge.cert || 0, tPred.thermalCert || 0);
     const neighborEvidence = state.outfitLogs.length > 0 ? Math.min(1, Math.max(ridgeCert, maxSim * Math.min(1, state.outfitLogs.length / 3))) : 0;
-    const wishlistPenalty = items.some(it => it.status === 'wishlist' || it.status === 'tryon') ? 0.14 : 0;
+    const isUnowned = items.some(it => it.status === 'wishlist' || it.status === 'tryon' || it.status === 'gap');
+    const wishlistPenalty = isUnowned ? 0.14 : 0;
     const certainty = Math.round(Math.max(15, Math.min(97, (avgComp * 0.40 + neighborEvidence * 0.40 + wornRatio * 0.20 - wishlistPenalty) * 100)));
+    const aesEvidence = state.outfitLogs.length > 0
+      ? Math.min(1, Math.max(aesRidge.cert || 0, Math.max(0, maxSim) * Math.min(1, state.outfitLogs.length / 3) * 0.75))
+      : 0;
+    const styleCertainty = Math.round(Math.max(15, Math.min(95, (avgComp * 0.25 + aesEvidence * 0.60 + wornRatio * 0.15 - (isUnowned ? 0.12 : 0)) * 100)));
 
     // 7. Explainable Reasons
     const reasons = [];
@@ -3005,6 +3165,7 @@
       comfortScore: comfortFinal,
       idealTemp: T_ideal,
       certainty,
+      styleCertainty,
       reasons,
       breakdown: {
         clipRidge: aesRidge.score,
@@ -3605,11 +3766,12 @@
       if (!itemsShareSeason(candidate, partner)) return;
       const ev = evaluateOutfit([candidate, partner], ctx, pre);
       const st = ev.styleScore ?? ev.score;
-      if (st > topScore) { topScore = st; topCertainty = ev.certainty; }
+      const stCert = ev.styleCertainty ?? ev.certainty;
+      if (st > topScore) { topScore = st; topCertainty = stCert; }
       if (st >= 74) {
         strongPairs++;
         catCounts[partner.category] = (catCounts[partner.category] || 0) + 1;
-        matchedPartners.push({ item: partner, styleScore: st, certainty: ev.certainty });
+        matchedPartners.push({ item: partner, styleScore: st, certainty: stCert });
       }
     });
     matchedPartners.sort((a, b) => b.styleScore - a.styleScore);
@@ -4786,67 +4948,205 @@
     ` : '');
   }
 
-  // ---------- 512-D ORTHOGONAL GAP VECTOR OPTIMIZER & GARMENT DECODER ----------
+  // ---------- 512-D ORTHOGONAL GAP VECTOR OPTIMIZER & 178-PROMPT FASHION TAXONOMY ----------
   const CLIP_DECODE_TYPES = [
+    // Outerwear (20)
     { label: 'Wool Overcoat', category: 'outerwear', text: 'tailored long wool overcoat outerwear coat', defaultWarmth: 4, defaultRain: 0 },
     { label: 'Waterproof Trench Coat', category: 'outerwear', text: 'waterproof technical trench coat rain shell outerwear', defaultWarmth: 3, defaultRain: 1 },
-    { label: 'Chore Jacket / Overshirt', category: 'outerwear', text: 'utilitarian chore jacket overshirt workwear outerwear', defaultWarmth: 3, defaultRain: 0 },
-    { label: 'Unstructured Blazer', category: 'outerwear', text: 'unstructured tailored blazer sport coat jacket', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Chore Jacket', category: 'outerwear', text: 'utilitarian chore jacket workwear outerwear', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Unstructured Blazer', category: 'outerwear', text: 'unstructured single-breasted tailored blazer sport coat', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Double-Breasted Blazer', category: 'outerwear', text: 'sharp double-breasted peak-lapel tailored suit blazer', defaultWarmth: 3, defaultRain: 0 },
     { label: 'Cropped Bomber Jacket', category: 'outerwear', text: 'minimalist cropped bomber blouson jacket outerwear', defaultWarmth: 3, defaultRain: 0 },
     { label: 'Insulated Down Parka', category: 'outerwear', text: 'heavy insulated winter down puffer parka coat', defaultWarmth: 5, defaultRain: 1 },
+    { label: 'Leather Moto Jacket', category: 'outerwear', text: 'edgy asymmetrical biker leather moto jacket outerwear', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Shearling Flight Jacket', category: 'outerwear', text: 'retro shearling fleece collar aviator flight jacket', defaultWarmth: 5, defaultRain: 0 },
+    { label: 'Kimono / Noragi Jacket', category: 'outerwear', text: 'avant-garde Japanese kimono noragi wrap jacket overshirt', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Cropped Utility Vest', category: 'outerwear', text: 'technical multi-pocket cropped utility gilet vest', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Quilted Puffer Vest', category: 'outerwear', text: 'insulated sleeveless quilted down puffer vest gilet', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Denim Trucker Jacket', category: 'outerwear', text: 'classic collared denim trucker jacket outerwear', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Harrington Jacket', category: 'outerwear', text: 'classic zip-up stand-collar harrington blouson jacket', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'M-65 Field Jacket', category: 'outerwear', text: 'four-pocket military utilitarian field jacket outerwear', defaultWarmth: 3, defaultRain: 1 },
+    { label: 'Suede Blouson', category: 'outerwear', text: 'refined zip-front suede leather blouson jacket', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Naval Peacoat', category: 'outerwear', text: 'double-breasted heavy wool naval peacoat winter coat', defaultWarmth: 5, defaultRain: 0 },
+    { label: 'Toggle Duffle Coat', category: 'outerwear', text: 'hooded wool toggle-fastening duffle coat outerwear', defaultWarmth: 5, defaultRain: 0 },
+    { label: 'Technical Rain Anorak', category: 'outerwear', text: 'waterproof hooded pullover technical shell anorak jacket', defaultWarmth: 2, defaultRain: 1 },
+    { label: 'Draped Cape Coat', category: 'outerwear', text: 'avant-garde structured sleeveless cape poncho coat', defaultWarmth: 4, defaultRain: 0 },
+    // Tops (22)
     { label: 'Merino Crewneck Sweater', category: 'top', text: 'fine merino wool crewneck knit sweater pullover', defaultWarmth: 3, defaultRain: 0 },
-    { label: 'Button-Down Oxford Shirt', category: 'top', text: 'crisp button-down oxford collared dress shirt', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Linen Camp-Collar Shirt', category: 'top', text: 'breathable short-sleeve linen camp collar summer shirt', defaultWarmth: 1, defaultRain: 0 },
-    { label: 'Heavyweight Boxy Tee', category: 'top', text: 'heavyweight cotton minimalist crewneck t-shirt', defaultWarmth: 1, defaultRain: 0 },
-    { label: 'Chunky Knit Cardigan', category: 'top', text: 'textured chunky wool knit button cardigan sweater', defaultWarmth: 4, defaultRain: 0 },
-    { label: 'Structured Polo / Henley', category: 'top', text: 'refined knit polo shirt or long-sleeve henley top', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Pleated Tailored Trousers', category: 'bottom', text: 'relaxed pleated tailored wool dress trousers pants', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Button-Down Oxford Shirt', category: 'top', text: 'crisp button-down oxford collared casual dress shirt', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Formal Dress Shirt', category: 'top', text: 'crisp tailored spread-collar formal suit dress shirt', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Camp-Collar Shirt', category: 'top', text: 'breathable short-sleeve open camp collar resort shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Heavyweight Boxy Tee', category: 'top', text: 'heavyweight cotton minimalist boxy crewneck t-shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Fitted Crewneck Tee', category: 'top', text: 'slim fitted basic crewneck short-sleeve t-shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Chunky Knit Cardigan', category: 'top', text: 'textured chunky wool knit button-front cardigan sweater', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Fine V-Neck Cardigan', category: 'top', text: 'lightweight fine-gauge layering v-neck cardigan', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Knit Polo Shirt', category: 'top', text: 'refined sweater-knit collared polo shirt top', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Long-Sleeve Henley', category: 'top', text: 'button-placket collarless long-sleeve henley top', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Open-Knit Crochet Shirt', category: 'top', text: 'textured open-knit crochet mesh resort button shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Draped Turtleneck', category: 'top', text: 'architectural high-neck turtleneck knit sweater', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Mockneck Pullover', category: 'top', text: 'clean minimalist mock-neck knit pullover top', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Cable-Knit Sweater', category: 'top', text: 'traditional heritage braided cable-knit fisherman sweater', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Quarter-Zip Pullover', category: 'top', text: 'sporty refined quarter-zip funnel-neck knit pullover', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Heavyweight Hoodie', category: 'top', text: 'structured heavyweight hooded fleece pullover sweatshirt', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Crewneck Sweatshirt', category: 'top', text: 'classic athletic french-terry crewneck sweatshirt', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Overshirt / Shacket', category: 'top', text: 'heavyweight structured button-up layering overshirt shacket', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Fluid Bowling Shirt', category: 'top', text: 'draped retro short-sleeve fluid silk bowling shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Ribbed Knit Tank', category: 'top', text: 'minimalist ribbed sleeveless knit tank top or sweater vest', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Graphic Streetwear Tee', category: 'top', text: 'expressive printed graphic streetwear oversized t-shirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Longline Tunic Shirt', category: 'top', text: 'avant-garde elongated band-collar tunic shirt', defaultWarmth: 2, defaultRain: 0 },
+    // Bottoms (18)
+    { label: 'Pleated Tailored Trousers', category: 'bottom', text: 'relaxed pleated tailored dress trousers pants', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Flat-Front Suit Pants', category: 'bottom', text: 'crisp tailored flat-front formal suit dress pants', defaultWarmth: 3, defaultRain: 0 },
     { label: 'Straight Selvedge Denim', category: 'bottom', text: 'straight-leg raw selvedge denim jeans pants', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Baggy Wide-Leg Jeans', category: 'bottom', text: 'relaxed baggy wide-leg streetwear denim jeans', defaultWarmth: 3, defaultRain: 0 },
     { label: 'Tapered Twill Chinos', category: 'bottom', text: 'clean cotton twill chino trousers casual pants', defaultWarmth: 2, defaultRain: 0 },
     { label: 'Wide-Leg Linen Pants', category: 'bottom', text: 'breezy wide-leg summer linen drawstring trousers', defaultWarmth: 1, defaultRain: 0 },
-    { label: 'Midi Slip / Knit Dress', category: 'fullbody', text: 'minimalist midi slip dress or ribbed knit sweater dress', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Tailored Jumpsuit / Boiler Suit', category: 'fullbody', text: 'structured one-piece tailored jumpsuit or utilitarian boiler suit', defaultWarmth: 3, defaultRain: 0 },
-    { label: 'Leather Penny Loafers', category: 'shoes', text: 'classic leather penny loafers dress shoes', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Weatherproof Chelsea Boots', category: 'shoes', text: 'waterproof leather chelsea boots ankle boots', defaultWarmth: 4, defaultRain: 1 },
-    { label: 'Minimalist Leather Sneakers', category: 'shoes', text: 'clean minimalist low-top leather sneakers shoes', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Suede Chukka / Derby Boots', category: 'shoes', text: 'soft suede chukka boots or casual derby shoes', defaultWarmth: 3, defaultRain: 0 },
-    { label: 'Structured Leather Tote', category: 'accessory', text: 'minimalist leather tote bag or crossbody messenger bag', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Woven Leather Belt', category: 'accessory', text: 'classic braided or smooth leather dress belt accessory', defaultWarmth: 2, defaultRain: 0 },
-    { label: 'Cashmere / Wool Scarf', category: 'accessory', text: 'soft brushed cashmere or wool winter scarf accessory', defaultWarmth: 5, defaultRain: 0 },
+    { label: 'Wide-Leg Cargo Trousers', category: 'bottom', text: 'avant-garde oversized multi-pocket parachute cargo pants', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Statement Leather Trousers', category: 'bottom', text: 'bold sleek leather or coated statement trousers pants', defaultWarmth: 4, defaultRain: 1 },
+    { label: 'Corduroy Trousers', category: 'bottom', text: 'textured ribbed corduroy straight-leg casual trousers', defaultWarmth: 4, defaultRain: 0 },
+    { label: 'Technical Hiking Pants', category: 'bottom', text: 'water-resistant articulated technical outdoor hiking pants', defaultWarmth: 3, defaultRain: 1 },
+    { label: 'Tailored Joggers', category: 'bottom', text: 'sleek tapered athletic sweatpants joggers lounge pants', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Athletic Sport Shorts', category: 'bottom', text: 'lightweight breathable athletic running sport shorts', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Tailored Chino Shorts', category: 'bottom', text: 'clean knee-length tailored cotton chino shorts', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Nylon Swim / Beach Shorts', category: 'bottom', text: 'quick-dry relaxed nylon beach swim shorts', defaultWarmth: 1, defaultRain: 1 },
+    { label: 'Denim Cut-Off Shorts', category: 'bottom', text: 'casual structured denim summer shorts', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Pleated Midi Skirt', category: 'bottom', text: 'flowing knife-pleated mid-calf midi skirt', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'A-Line Mini Skirt', category: 'bottom', text: 'structured tailored A-line short mini skirt', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Flared Bootcut Trousers', category: 'bottom', text: 'retro elongated flared bootcut tailored trousers', defaultWarmth: 3, defaultRain: 0 },
+    // Full Body (8)
+    { label: 'Midi Slip Dress', category: 'fullbody', text: 'minimalist bias-cut fluid midi slip dress', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Ribbed Knit Dress', category: 'fullbody', text: 'cozy sculpted ribbed-knit sweater dress', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Tailored Shirt Dress', category: 'fullbody', text: 'crisp belted button-front collared shirt dress', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Draped Wrap Dress', category: 'fullbody', text: 'fluid cinched-waist v-neck wrap dress', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Tailored Jumpsuit', category: 'fullbody', text: 'sleek one-piece tailored evening jumpsuit', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Utilitarian Boiler Suit', category: 'fullbody', text: 'relaxed workwear zip-front utilitarian boiler suit coverall', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Workwear Overalls', category: 'fullbody', text: 'bib-front heritage workwear dungarees overalls', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Maxi Evening Gown', category: 'fullbody', text: 'floor-length formal evening maxi dress gown', defaultWarmth: 2, defaultRain: 0 },
+    // Shoes (12)
+    { label: 'Leather Penny Loafers', category: 'shoes', text: 'classic smooth leather penny loafers slip-on dress shoes', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Tassel Loafers', category: 'shoes', text: 'refined dressy tassel loafers leather shoes', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Weatherproof Chelsea Boots', category: 'shoes', text: 'waterproof elastic-gusset leather chelsea ankle boots', defaultWarmth: 4, defaultRain: 1 },
+    { label: 'Minimalist Leather Sneakers', category: 'shoes', text: 'clean minimalist low-top court leather sneakers', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Retro Runner Sneakers', category: 'shoes', text: 'vintage mesh-and-suede athletic retro runner sneakers', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'High-Top Sneakers', category: 'shoes', text: 'streetwear canvas or leather high-top sneakers', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Suede Chukka Boots', category: 'shoes', text: 'soft ankle-height two-eyelet suede desert chukka boots', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Cap-Toe Oxford Shoes', category: 'shoes', text: 'formal closed-lacing leather cap-toe oxford dress shoes', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Chunky Lug-Sole Derbies', category: 'shoes', text: 'avant-garde chunky platform lug-sole leather derby shoes', defaultWarmth: 3, defaultRain: 1 },
+    { label: 'Western / Harness Boots', category: 'shoes', text: 'statement pointed western harness ankle boots', defaultWarmth: 3, defaultRain: 0 },
+    { label: 'Lace-Up Combat Boots', category: 'shoes', text: 'rugged tall lace-up leather combat boots', defaultWarmth: 4, defaultRain: 1 },
+    { label: 'Leather Mules / Sandals', category: 'shoes', text: 'minimalist slip-on leather mules clogs or sandals', defaultWarmth: 1, defaultRain: 0 },
+    // Accessories (8)
+    { label: 'Structured Leather Tote', category: 'accessory', text: 'minimalist architectural leather tote bag', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Crossbody Messenger Bag', category: 'accessory', text: 'functional urban crossbody sling messenger bag', defaultWarmth: 2, defaultRain: 1 },
+    { label: 'Minimalist Backpack', category: 'accessory', text: 'sleek structured commuter backpack bag', defaultWarmth: 2, defaultRain: 1 },
+    { label: 'Woven Leather Belt', category: 'accessory', text: 'classic braided or smooth leather dress belt', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Brushed Cashmere Scarf', category: 'accessory', text: 'soft fringed cashmere or wool winter scarf', defaultWarmth: 5, defaultRain: 0 },
+    { label: 'Printed Silk Bandana', category: 'accessory', text: 'expressive square silk neck scarf bandana accessory', defaultWarmth: 1, defaultRain: 0 },
+    { label: 'Silk Necktie', category: 'accessory', text: 'formal woven silk tailored suit necktie', defaultWarmth: 2, defaultRain: 0 },
+    { label: 'Ribbed Knit Beanie', category: 'accessory', text: 'cozy cuffed ribbed wool winter beanie knit hat', defaultWarmth: 5, defaultRain: 0 }
   ];
 
   const CLIP_DECODE_COLORS = [
     { label: 'Charcoal', hex: '#333840', text: 'dark charcoal grey color' },
     { label: 'Black', hex: '#18181B', text: 'deep matte black color' },
     { label: 'Navy', hex: '#1E2D40', text: 'deep navy blue color' },
-    { label: 'Mid-Grey', hex: '#6B7280', text: 'heather mid-grey silver color' },
-    { label: 'Ivory', hex: '#ECE8DF', text: 'warm ivory cream off-white color' },
-    { label: 'Olive', hex: '#4F5D46', text: 'muted olive drab moss green color' },
+    { label: 'Midnight Blue', hex: '#172554', text: 'dark midnight ink blue color' },
+    { label: 'Mid-Grey', hex: '#6B7280', text: 'neutral mid-grey slate color' },
+    { label: 'Heather Grey', hex: '#9CA3AF', text: 'light marled heather silver grey color' },
+    { label: 'Ivory', hex: '#ECE8DF', text: 'warm ivory off-white color' },
+    { label: 'Crisp White', hex: '#F8FAFC', text: 'pure bright crisp white color' },
+    { label: 'Cream', hex: '#F5EFE6', text: 'soft buttercream ecru color' },
+    { label: 'Sand', hex: '#D1C3AE', text: 'light stone khaki sand neutral color' },
+    { label: 'Taupe', hex: '#8B8178', text: 'muted warm greige taupe color' },
     { label: 'Camel', hex: '#B08968', text: 'warm camel tan beige color' },
-    { label: 'Espresso', hex: '#3B261D', text: 'rich espresso dark brown color' },
-    { label: 'Burgundy', hex: '#7B2C3B', text: 'deep burgundy oxblood wine red color' },
+    { label: 'Cognac', hex: '#9A5B32', text: 'rich saddle cognac caramel brown color' },
+    { label: 'Espresso', hex: '#3B261D', text: 'deep espresso dark roasted brown color' },
+    { label: 'Chocolate', hex: '#5C3A21', text: 'warm dark chocolate brown color' },
+    { label: 'Olive', hex: '#4F5D46', text: 'muted olive drab moss green color' },
+    { label: 'Sage Green', hex: '#84A59D', text: 'soft muted dusty sage green color' },
     { label: 'Forest Green', hex: '#234236', text: 'deep forest pine green color' },
-    { label: 'Slate Blue', hex: '#4A637D', text: 'muted slate dusty blue color' },
-    { label: 'Sand', hex: '#D1C3AE', text: 'light stone khaki sand neutral color' }
+    { label: 'Emerald', hex: '#047857', text: 'vivid jewel-tone emerald green color' },
+    { label: 'Mint', hex: '#A7F3D0', text: 'fresh pale pastel mint green color' },
+    { label: 'Slate Blue', hex: '#4A637D', text: 'muted slate dusty steel blue color' },
+    { label: 'Sky Blue', hex: '#93C5FD', text: 'light pastel powder sky blue color' },
+    { label: 'Cobalt Blue', hex: '#1D4ED8', text: 'vibrant electric cobalt royal blue color' },
+    { label: 'Indigo', hex: '#312E81', text: 'deep raw denim indigo blue color' },
+    { label: 'Burgundy', hex: '#7B2C3B', text: 'deep burgundy oxblood wine red color' },
+    { label: 'Crimson Red', hex: '#B91C1C', text: 'bold rich crimson ruby red color' },
+    { label: 'Terracotta Rust', hex: '#B45309', text: 'warm burnt terracotta rust orange-brown color' },
+    { label: 'Coral', hex: '#FB7185', text: 'bright warm coral salmon pink-orange color' },
+    { label: 'Blush Pink', hex: '#FBCFE8', text: 'soft muted dusty blush rose pink color' },
+    { label: 'Lavender', hex: '#C4B5FD', text: 'soft pastel lilac lavender purple color' },
+    { label: 'Plum Violet', hex: '#6B21A8', text: 'deep expressive plum aubergine violet color' },
+    { label: 'Ochre Mustard', hex: '#CA8A04', text: 'rich golden ochre mustard yellow color' },
+    { label: 'Butter Yellow', hex: '#FDE68A', text: 'soft pale pastel butter yellow color' },
+    { label: 'Teal', hex: '#0F766E', text: 'deep rich petrol teal blue-green color' },
+    { label: 'Metallic Silver', hex: '#94A3B8', text: 'cool metallic chrome silver futuristic color' },
+    { label: 'Champagne Gold', hex: '#D4AF37', text: 'warm metallic champagne gold luster color' }
   ];
 
+  // Fabrics carry compatible category guards so Gap Analysis never produces nonsensical combos (e.g. silk rain boots)
   const CLIP_DECODE_FABRICS = [
-    { label: 'Brushed Wool', text: 'brushed heavy wool flannel fabric' },
-    { label: 'Extra-Fine Merino', text: 'smooth extra-fine merino wool knit fabric' },
-    { label: 'Heavy Cotton Twill', text: 'sturdy heavy cotton twill canvas fabric' },
-    { label: '100% Linen', text: 'airy woven breathable linen fabric' },
-    { label: 'Raw Selvedge Denim', text: 'structured raw indigo selvedge denim fabric' },
-    { label: 'Soft Suede', text: 'matte velvety brushed suede leather' },
-    { label: 'Full-Grain Leather', text: 'smooth structured full-grain calfskin leather' },
-    { label: 'Waterproof Tech Shell', text: 'matte 3-layer waterproof breathable technical shell fabric' },
-    { label: 'Fluid Silk / Tencel', text: 'soft draped fluid silk or tencel fabric' },
-    { label: 'Ribbed Corduroy', text: 'textured wide-wale ribbed corduroy fabric' }
+    { label: 'Brushed Wool', text: 'brushed heavy wool coat fabric', cats: ['outerwear', 'bottom', 'accessory'] },
+    { label: 'Wool Flannel', text: 'soft tailored wool flannel suiting fabric', cats: ['outerwear', 'bottom', 'fullbody'] },
+    { label: 'Extra-Fine Merino', text: 'smooth extra-fine merino wool knit fabric', cats: ['top', 'fullbody', 'accessory'] },
+    { label: 'Cashmere', text: 'plush ultra-soft brushed cashmere knit fabric', cats: ['top', 'outerwear', 'accessory'] },
+    { label: 'Tweed / Herringbone', text: 'textured heritage woven wool tweed fabric', cats: ['outerwear', 'bottom', 'fullbody'] },
+    { label: 'Heavy Cotton Twill', text: 'sturdy heavy cotton twill canvas fabric', cats: ['outerwear', 'bottom', 'fullbody', 'accessory'] },
+    { label: 'Crisp Cotton Poplin', text: 'smooth crisp woven cotton poplin shirting fabric', cats: ['top', 'fullbody'] },
+    { label: 'Cotton Oxford', text: 'textured basketweave cotton oxford shirting fabric', cats: ['top', 'fullbody'] },
+    { label: 'Jersey Cotton', text: 'soft breathable knit cotton jersey t-shirt fabric', cats: ['top', 'bottom', 'fullbody'] },
+    { label: 'French Terry', text: 'loopback heavyweight cotton french terry fleece', cats: ['top', 'bottom'] },
+    { label: '100% Linen', text: 'airy woven breathable summer linen fabric', cats: ['outerwear', 'top', 'bottom', 'fullbody'] },
+    { label: 'Raw Selvedge Denim', text: 'structured rigid raw indigo selvedge denim fabric', cats: ['outerwear', 'bottom', 'fullbody'] },
+    { label: 'Washed Denim', text: 'soft faded vintage washed cotton denim fabric', cats: ['outerwear', 'top', 'bottom', 'fullbody'] },
+    { label: 'Soft Suede', text: 'matte velvety brushed suede leather', cats: ['outerwear', 'shoes', 'accessory'] },
+    { label: 'Full-Grain Leather', text: 'smooth structured full-grain calfskin leather', cats: ['outerwear', 'bottom', 'shoes', 'accessory'] },
+    { label: 'Patent Leather', text: 'high-gloss polished patent leather', cats: ['shoes', 'accessory'] },
+    { label: 'Waterproof Tech Shell', text: 'matte 3-layer waterproof breathable technical shell fabric', cats: ['outerwear', 'bottom', 'accessory'] },
+    { label: 'Crinkled Ripstop Nylon', text: 'technical crinkled parachute ripstop nylon fabric', cats: ['outerwear', 'bottom', 'accessory'] },
+    { label: 'Technical Stretch', text: 'sleek moisture-wicking performance stretch nylon fabric', cats: ['top', 'bottom', 'outerwear'] },
+    { label: 'Fluid Silk / Tencel', text: 'soft draped fluid silk or tencel fabric', cats: ['top', 'bottom', 'fullbody', 'accessory'] },
+    { label: 'Glossy Satin', text: 'high-shine liquid glossy satin evening fabric', cats: ['outerwear', 'top', 'fullbody', 'accessory'] },
+    { label: 'Ribbed Corduroy', text: 'textured wide-wale ribbed cotton corduroy fabric', cats: ['outerwear', 'top', 'bottom', 'fullbody'] },
+    { label: 'Brushed Mohair / Bouclé', text: 'fuzzy hairy brushed mohair boucle statement knit fabric', cats: ['outerwear', 'top', 'accessory'] },
+    { label: 'Crushed Velvet', text: 'plush lustrous crushed velvet evening fabric', cats: ['outerwear', 'top', 'bottom', 'fullbody'] },
+    { label: 'Shearling Fleece', text: 'thick plush shearling teddy fleece fabric', cats: ['outerwear', 'accessory'] },
+    { label: 'Waffle Knit', text: 'thermal honeycomb textured waffle-knit cotton fabric', cats: ['top'] },
+    { label: 'Open Crochet / Mesh', text: 'airy open-weave crochet or mesh knit fabric', cats: ['top', 'fullbody'] },
+    { label: 'Canvas / Mesh', text: 'breathable woven canvas and athletic mesh', cats: ['shoes', 'accessory'] }
   ];
 
   const CLIP_DECODE_SILHOUETTES = [
-    { value: 'fitted', label: 'Fitted', text: 'slim fitted tailored close cut silhouette' },
-    { value: 'structured', label: 'Structured', text: 'structured classic straight tailored silhouette' },
-    { value: 'relaxed', label: 'Relaxed', text: 'relaxed boxy oversized draped silhouette' }
+    { value: 'fitted', label: 'Slim Fitted', text: 'slim fitted close-cut tailored silhouette' },
+    { value: 'structured', label: 'Tailored Classic', text: 'structured classic tailored clean-line silhouette' },
+    { value: 'structured', label: 'Straight Cut', text: 'regular straight-cut timeless silhouette' },
+    { value: 'relaxed', label: 'Relaxed', text: 'relaxed easy-fit comfortable draped silhouette' },
+    { value: 'relaxed', label: 'Oversized Boxy', text: 'dramatic oversized boxy wide architectural silhouette' },
+    { value: 'fitted', label: 'Cropped Sculpted', text: 'sharp cropped short-proportion sculpted silhouette' },
+    { value: 'relaxed', label: 'Longline Draped', text: 'elongated longline fluid sweeping silhouette' },
+    { value: 'relaxed', label: 'Wide-Leg / Balloon', text: 'voluminous wide-leg balloon sculptural silhouette' },
+    { value: 'structured', label: 'Tapered', text: 'clean gradually tapered modern silhouette' },
+    { value: 'structured', label: 'Architectural', text: 'sharp geometric architectural structured silhouette' },
+    { value: 'relaxed', label: 'Asymmetric Draped', text: 'avant-garde asymmetrical wrapped draped silhouette' },
+    { value: 'fitted', label: 'Cinched / Belted', text: 'defined cinched-waist belted silhouette' }
+  ];
+
+  const CLIP_DECODE_PATTERNS = [
+    { label: 'Solid', isSolid: true, text: 'plain solid single-color unpatterned minimalist fabric' },
+    { label: 'Pinstripe', isSolid: false, text: 'fine vertical tailored pinstripe suiting pattern' },
+    { label: 'Chalk Stripe', isSolid: false, text: 'bold wide vertical chalk-stripe tailored pattern' },
+    { label: 'Breton Stripe', isSolid: false, text: 'horizontal nautical breton striped knit pattern' },
+    { label: 'Plaid / Tartan', isSolid: false, text: 'woven checkered tartan plaid pattern' },
+    { label: 'Windowpane Check', isSolid: false, text: 'clean minimalist grid windowpane check pattern' },
+    { label: 'Gingham', isSolid: false, text: 'crisp two-tone small gingham check pattern' },
+    { label: 'Houndstooth', isSolid: false, text: 'classic woven jagged houndstooth check pattern' },
+    { label: 'Herringbone', isSolid: false, text: 'subtle chevron woven herringbone twill pattern' },
+    { label: 'Floral Print', isSolid: false, text: 'expressive botanical floral print pattern' },
+    { label: 'Geometric Print', isSolid: false, text: 'modern retro geometric graphic print pattern' },
+    { label: 'Abstract Print', isSolid: false, text: 'artistic painterly abstract brushstroke print pattern' },
+    { label: 'Colorblock', isSolid: false, text: 'bold contrasting paneled colorblock design pattern' },
+    { label: 'Animal Print', isSolid: false, text: 'bold leopard or snakeskin animal print pattern' }
   ];
 
   let synthesizedGaps = [];
@@ -4862,10 +5162,10 @@
   function computeGapSynthKey() {
     const ownedSig = state.items
       .filter(i => i.status === 'owned')
-      .map(i => `${i.id}:${i.category}:${Array.isArray(i.clipEmbedding) ? Math.round((i.clipEmbedding[0] || 0) * 1000) : 0}`)
+      .map(i => `${i.id}:${i.category}:${i.colorHex}:${i.fabric}:${i.silhouette}:${i.clipModelId || ''}:${Array.isArray(i.clipEmbedding) ? Math.round((i.clipEmbedding[0] || 0) * 1000) : 0}`)
       .join('|');
     const logSig = state.outfitLogs
-      .map(l => `${l.id}:${l.aesthetic}:${l.comfort}:${l.date}`)
+      .map(l => `${l.id}:${l.aesthetic}:${l.comfort}:${l.occasion}:${l.date}`)
       .join('|');
     return `${gapCertMode}::${(state.settings && state.settings.recencyHalfLife) || 60}::${ownedSig}::${logSig}`;
   }
@@ -4906,14 +5206,24 @@
 
   async function ensureDecodeBanksLoaded(eng, onProgress) {
     if (eng.decodeBanks) return eng.decodeBanks;
-    if (onProgress) onProgress('Encoding 512-D garment decoding banks (types, colors, fabrics)...');
+    const cacheKey = `decode_banks_v3_${eng.activeModelId || CLIP_MODEL_ID}_${CLIP_DECODE_TYPES.length}_${CLIP_DECODE_COLORS.length}_${CLIP_DECODE_FABRICS.length}_${CLIP_DECODE_PATTERNS.length}`;
+    const cached = await idbGetKey(cacheKey);
+    if (cached && Array.isArray(cached.typeVecs) && cached.typeVecs.length === CLIP_DECODE_TYPES.length && Array.isArray(cached.patternVecs)) {
+      eng.decodeBanks = cached;
+      return eng.decodeBanks;
+    }
+    if (onProgress) onProgress('Encoding 178-prompt FashionCLIP taxonomy (cached once in browser)...');
     async function encodeBatch(items) {
-      const inputs = eng.tokenizer(items.map(x => x.text), eng.tokOpts || { padding: true, truncation: true });
-      const { text_embeds } = await eng.textModel(inputs);
-      const dim = 512;
       const out = [];
-      for (let i = 0; i < items.length; i++) {
-        out.push(l2Normalize(text_embeds.data.slice(i * dim, (i + 1) * dim)));
+      const chunkSize = 24;
+      for (let start = 0; start < items.length; start += chunkSize) {
+        const chunk = items.slice(start, start + chunkSize);
+        const inputs = eng.tokenizer(chunk.map(x => x.text), eng.tokOpts || { padding: true, truncation: true });
+        const { text_embeds } = await eng.textModel(inputs);
+        const dim = 512;
+        for (let i = 0; i < chunk.length; i++) {
+          out.push(l2Normalize(Array.from(text_embeds.data.slice(i * dim, (i + 1) * dim))));
+        }
       }
       return out;
     }
@@ -4921,19 +5231,73 @@
     const colorVecs = await encodeBatch(CLIP_DECODE_COLORS);
     const fabricVecs = await encodeBatch(CLIP_DECODE_FABRICS);
     const silVecs = await encodeBatch(CLIP_DECODE_SILHOUETTES);
+    const patternVecs = await encodeBatch(CLIP_DECODE_PATTERNS);
 
-    // Center of the CLIP fashion cone (mean of all 25 garment-type vectors)
     const fashionMean = new Array(512).fill(0);
     typeVecs.forEach(v => { for (let d = 0; d < 512; d++) fashionMean[d] += v[d]; });
     const meanUnit = l2Normalize(fashionMean);
 
-    eng.decodeBanks = { typeVecs, colorVecs, fabricVecs, silVecs, fashionMean: meanUnit };
+    eng.decodeBanks = { typeVecs, colorVecs, fabricVecs, silVecs, patternVecs, fashionMean: meanUnit };
+    idbPutKey(cacheKey, eng.decodeBanks);
     return eng.decodeBanks;
   }
 
+  // Zero-shot smart garment namer for newly uploaded photos & in-store try-ons using the 178-prompt FashionCLIP taxonomy
+  async function decodeSmartGarmentName(eng, vec512, categoryHint) {
+    if (!vec512 || vec512.length !== 512) return null;
+    try {
+      const banks = await ensureDecodeBanksLoaded(eng);
+      let bestType = CLIP_DECODE_TYPES[0], bestTypeSim = -99;
+      for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
+        if (categoryHint && CLIP_DECODE_TYPES[i].category !== categoryHint) continue;
+        const sim = cosineSimilarity(vec512, banks.typeVecs[i]);
+        if (sim > bestTypeSim) { bestTypeSim = sim; bestType = CLIP_DECODE_TYPES[i]; }
+      }
+      let bestColor = CLIP_DECODE_COLORS[0], bestColorSim = -99;
+      for (let i = 0; i < CLIP_DECODE_COLORS.length; i++) {
+        const sim = cosineSimilarity(vec512, banks.colorVecs[i]);
+        if (sim > bestColorSim) { bestColorSim = sim; bestColor = CLIP_DECODE_COLORS[i]; }
+      }
+      let bestPat = CLIP_DECODE_PATTERNS[0], bestPatSim = -99;
+      const solidSim = cosineSimilarity(vec512, banks.patternVecs[0]);
+      for (let i = 0; i < CLIP_DECODE_PATTERNS.length; i++) {
+        const sim = cosineSimilarity(vec512, banks.patternVecs[i]);
+        if (sim > bestPatSim) { bestPatSim = sim; bestPat = CLIP_DECODE_PATTERNS[i]; }
+      }
+      const usePat = !bestPat.isSolid && (bestPatSim - solidSim > 0.015);
+      const parts = [bestColor.label];
+      if (usePat) parts.push(bestPat.label);
+      parts.push(bestType.label);
+      return { name: parts.join(' '), type: bestType.label, color: bestColor.label, pattern: usePat ? bestPat.label : 'Solid' };
+    } catch (_) { return null; }
+  }
+
+  async function tryLoadCachedGapEngines() {
+    for (const modelId of [CLIP_MODEL_ID, CLIP_FALLBACK_MODEL_ID]) {
+      const bankKey = `decode_banks_v3_${modelId}_${CLIP_DECODE_TYPES.length}_${CLIP_DECODE_COLORS.length}_${CLIP_DECODE_FABRICS.length}_${CLIP_DECODE_PATTERNS.length}`;
+      const metaKey = `prompt_meta_v3_${modelId}`;
+      const [banks, meta] = await Promise.all([idbGetKey(bankKey), idbGetKey(metaKey)]);
+      if (banks && Array.isArray(banks.typeVecs) && banks.typeVecs.length === CLIP_DECODE_TYPES.length && Array.isArray(banks.patternVecs) && meta && meta.promptEmbeddings) {
+        clipEngine.decodeBanks = banks;
+        if (!clipEngine.promptEmbeddings) clipEngine.promptEmbeddings = meta.promptEmbeddings;
+        if (!clipEngine.styleProbeEmbeddings) clipEngine.styleProbeEmbeddings = meta.styleProbeEmbeddings;
+        if (!clipEngine.cloPromptEmbeddings) clipEngine.cloPromptEmbeddings = meta.cloPromptEmbeddings;
+        return { eng: clipEngine, banks };
+      }
+    }
+    return null;
+  }
+
   async function synthesizeOrthogonalGaps(onProgress) {
-    const eng = await ensureClipLoaded(onProgress);
-    const banks = await ensureDecodeBanksLoaded(eng, onProgress);
+    let eng, banks;
+    const cachedHit = await tryLoadCachedGapEngines();
+    if (cachedHit) {
+      eng = cachedHit.eng;
+      banks = cachedHit.banks;
+    } else {
+      eng = await ensureClipLoaded(onProgress);
+      banks = await ensureDecodeBanksLoaded(eng, onProgress);
+    }
     if (onProgress) onProgress('Optimizing 25 mutually perpendicular 512-D vectors in your taste space...');
 
     const pre = makePrecomputedModels();
@@ -5010,25 +5374,59 @@
     //      so gaps stay generally aligned with your taste while fanning out slightly non-parallel for exploration!
     //    - On the ~508 taste-neutral dimensions: STRICT 100% Gram-Schmidt perpendicular to owned & mutual gaps.
     const ridge = pre.aesRidgeModel;
-    const certBeta = gapCertMode === 'safe' ? -0.60 : gapCertMode === 'explore' ? 0.70 : 0.0;
-    const GAMMA_OPT = 3.0;
+    const certBeta = gapCertMode === 'safe' ? -1.25 : gapCertMode === 'explore' ? 1.45 : 0.0;
+    const GAMMA_OPT = 2.6;
+
+    function centerBankVecs(bankVecs) {
+      if (bankVecs.length < 2) return bankVecs;
+      const m = new Array(512).fill(0);
+      bankVecs.forEach(v => { for (let d = 0; d < 512; d++) m[d] += v[d]; });
+      for (let d = 0; d < 512; d++) m[d] /= bankVecs.length;
+      return bankVecs.map(v => centerClipVec(v, m));
+    }
+    const typeVecsC = centerBankVecs(banks.typeVecs);
+    const colorVecsC = centerBankVecs(banks.colorVecs);
+    const fabricVecsC = centerBankVecs(banks.fabricVecs);
+    const silVecsC = centerBankVecs(banks.silVecs);
+    const patternVecsC = centerBankVecs(banks.patternVecs || []);
+
+    // Pure Dual Ridge GP posterior scoring for any centered 512-D candidate vector
+    function dualRidgePosterior(vCentered) {
+      if (ridge.n === 0) return { mu: 0, sigma: 1, acq: 0 };
+      const kVec = ridge.samples.map(s => Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vCentered, s.vMean))));
+      let muVal = 0;
+      for (let i = 0; i < ridge.n; i++) muVal += ridge.alpha[i] * kVec[i];
+      const explained = ridge.quadForm(kVec);
+      const sigma = Math.sqrt(Math.max(0.02, 1 - Math.max(0, Math.min(0.999, explained))));
+      const muNorm = muVal / 35;
+      const acq = muNorm + certBeta * sigma;
+      return { mu: muNorm, sigma, acq };
+    }
+
+    // Rank the 36 type seeds by pure Dual Ridge acquisition (mu + beta * sigma) and take top 20
+    // so Safe and Explore genuinely pick different garment types rather than forcing all 36!
+    const seedOrder = typeVecsC.map((vc, idx) => ({ idx, post: dualRidgePosterior(vc) }));
+    if (ridge.n > 0 && certBeta !== 0) {
+      seedOrder.sort((a, b) => b.post.acq - a.post.acq);
+    }
+    const selectedSeeds = seedOrder.slice(0, 25);
 
     const gapNeutralBasis = [];
     const gapTasteDirs = [];
     const optVecs = [];
 
-    for (let k = 0; k < CLIP_DECODE_TYPES.length; k++) {
-      let v = banks.typeVecs[k].slice();
+    for (let sIdx = 0; sIdx < selectedSeeds.length; sIdx++) {
+      const k = selectedSeeds[sIdx].idx;
+      let vC = typeVecsC[k].slice();
 
-      // Optimize mu(v) + beta * sigma(v) over ALL outfit logs via Dual Ridge kernel gradient
-      for (let step = 0; step < 5; step++) {
+      // Optimize directly in centered 512-D space via pure Dual Ridge GP acquisition: mu(v) + beta * sigma(v)
+      for (let step = 0; step < 10; step++) {
         const grad = new Array(512).fill(0);
 
         if (ridge.n > 0) {
-          const vC = centerClipVec(v, mu);
           const kVec = ridge.samples.map(s => Math.exp(-GAMMA_OPT * Math.max(0, 1 - cosineSimilarity(vC, s.vMean))));
 
-          // 1) Predicted style mean gradient: grad_v mu(v) = sum_i alpha_i * gamma * k_i * s_i
+          // 1) Predicted style mean gradient: grad_v mu(v)
           const gMu = new Array(512).fill(0);
           for (let i = 0; i < ridge.n; i++) {
             const coeff = (ridge.alpha[i] / 35) * GAMMA_OPT * kVec[i];
@@ -5037,7 +5435,8 @@
           }
           const gMuNorm = Math.sqrt(gMu.reduce((s, x) => s + x * x, 0));
           if (gMuNorm > 1e-6) {
-            for (let d = 0; d < 512; d++) grad[d] += 0.34 * (gMu[d] / gMuNorm);
+            const muStep = gapCertMode === 'explore' ? 0.16 : 0.34;
+            for (let d = 0; d < 512; d++) grad[d] += muStep * (gMu[d] / gMuNorm);
           }
 
           // 2) Posterior certainty / uncertainty gradient: c(v) = k^T (K+lambda I)^-1 k
@@ -5054,39 +5453,40 @@
             }
             const gCertNorm = Math.sqrt(gCert.reduce((s, x) => s + x * x, 0));
             if (gCertNorm > 1e-6) {
-              // Safe (certBeta < 0): move WITH grad(certainty); Explore (certBeta > 0): move AGAINST grad(certainty) scaled by 1/sigma
-              const certStep = certBeta < 0 ? Math.abs(certBeta) * 0.45 : -(certBeta / (2 * sigma)) * 0.32;
+              // Safe (certBeta < 0): pull strongly INTO high-certainty logged subspace
+              // Explore (certBeta > 0): push strongly OUT of logged subspace to maximize sigma(v)
+              const certStep = certBeta < 0 ? Math.abs(certBeta) * 0.42 : -(certBeta / (2 * sigma)) * 0.45;
               for (let d = 0; d < 512; d++) grad[d] += certStep * (gCert[d] / gCertNorm);
             }
           }
         } else if (tasteUnit) {
-          for (let d = 0; d < 512; d++) grad[d] += 0.25 * tasteUnit[d];
+          for (let d = 0; d < 512; d++) grad[d] += (gapCertMode === 'explore' ? -0.18 : 0.25) * tasteUnit[d];
         }
 
-        // Duplicate repulsion against owned closet items (centered space)
-        const vRep = centerClipVec(v, mu);
+        // Duplicate repulsion against owned closet items (stronger in Explore)
+        const repThresh = gapCertMode === 'explore' ? 0.25 : 0.55;
+        const repGain = gapCertMode === 'explore' ? 0.75 : 0.45;
         ownedCenteredVecs.forEach(ov => {
-          const sim = cosineSimilarity(vRep, ov);
-          if (sim > 0.55) {
-            const push = (sim - 0.55) * 0.55;
+          const sim = cosineSimilarity(vC, ov);
+          if (sim > repThresh) {
+            const push = (sim - repThresh) * repGain;
             for (let d = 0; d < 512; d++) grad[d] -= push * ov[d];
           }
         });
-        for (let d = 0; d < 512; d++) v[d] += 0.28 * grad[d];
-        v = l2Normalize(v);
+        for (let d = 0; d < 512; d++) vC[d] += 0.24 * grad[d];
+        vC = l2Normalize(vC);
       }
 
-      // A) Taste-subspace component (raw coordinates inside 1-4D tasteBasis)
-      const isTasteExplorer = gapCertMode === 'explore' ? true : (gapCertMode === 'safe' ? false : (k % 4 === 3));
+      // A) Taste-subspace component (within 1-4D tasteBasis)
+      const isTasteExplorer = gapCertMode === 'explore' ? true : (gapCertMode === 'safe' ? false : (sIdx % 4 === 3));
       const vTaste = new Array(512).fill(0);
       for (let j = 0; j < tasteBasis.length; j++) {
         const bj = tasteBasis[j];
         let proj = 0;
-        for (let d = 0; d < 512; d++) proj += v[d] * bj[d];
+        for (let d = 0; d < 512; d++) proj += vC[d] * bj[d];
         for (let d = 0; d < 512; d++) vTaste[d] += proj * bj[d];
       }
-      // Partial Gram-Schmidt inside the 1-4D taste subspace so vectors fan out according to Safe / Balanced / Explore
-      const tasteRepel = gapCertMode === 'safe' ? 0.10 : gapCertMode === 'explore' ? 0.34 : (isTasteExplorer ? 0.35 : 0.18);
+      const tasteRepel = gapCertMode === 'safe' ? 0.08 : gapCertMode === 'explore' ? 0.45 : (isTasteExplorer ? 0.35 : 0.18);
       if (gapTasteDirs.length && tasteBasis.length >= 2) {
         const avgPrev = new Array(512).fill(0);
         gapTasteDirs.forEach(gt => { for (let d = 0; d < 512; d++) avgPrev[d] += gt[d]; });
@@ -5103,29 +5503,33 @@
         for (let d = 0; d < 512; d++) vTaste[d] = vtUnit[d];
       }
 
-      // B) Taste-neutral component (strictly 100% orthogonal to ownedNeutralBasis AND previous gapNeutralBasis!)
-      let uNeutral = projectOutBasis(v, [mu, ...tasteBasis, ...ownedNeutralBasis, ...gapNeutralBasis]);
+      // B) Taste-neutral orthogonal component (strictly perpendicular to owned & prior gaps)
+      let uNeutral = projectOutBasis(vC, [mu, ...tasteBasis, ...ownedNeutralBasis, ...gapNeutralBasis]);
       const unNorm = Math.sqrt(uNeutral.reduce((s, x) => s + x * x, 0)) || 1;
       for (let d = 0; d < 512; d++) uNeutral[d] /= unNorm;
       gapNeutralBasis.push(uNeutral);
 
-      // Reconstruct: fashion cone center + taste component + strictly perpendicular novel component
-      const vStar = new Array(512);
+      // Reconstruct: anchor around closetMean (image space) for Dual Ridge scoring (zero modality gap!)
+      // and around mu (text space) for zero-shot text attribute inference
+      const imgAnchor = closetMean || mu;
+      const vStarImg = new Array(512);
+      const vStarTxt = new Array(512);
       const vDev = new Array(512);
       if (vtNorm > 1e-4) {
-        const tW = gapCertMode === 'safe' ? 0.42 : gapCertMode === 'explore' ? 0.20 : (isTasteExplorer ? 0.20 : 0.34);
-        const nW = gapCertMode === 'safe' ? 0.72 : gapCertMode === 'explore' ? 0.85 : (isTasteExplorer ? 0.84 : 0.79);
+        const tW = gapCertMode === 'safe' ? 0.85 : gapCertMode === 'explore' ? 0.05 : (isTasteExplorer ? 0.22 : 0.48);
+        const nW = gapCertMode === 'safe' ? 0.28 : gapCertMode === 'explore' ? 0.98 : (isTasteExplorer ? 0.86 : 0.70);
         for (let d = 0; d < 512; d++) {
           vDev[d] = tW * vTaste[d] + nW * uNeutral[d];
-          vStar[d] = 0.50 * mu[d] + vDev[d];
         }
       } else {
-        for (let d = 0; d < 512; d++) {
-          vDev[d] = uNeutral[d];
-          vStar[d] = 0.55 * mu[d] + 0.835 * uNeutral[d];
-        }
+        for (let d = 0; d < 512; d++) vDev[d] = uNeutral[d];
       }
-      optVecs.push({ vec: l2Normalize(vStar), dev: l2Normalize(vDev), isTasteExplorer });
+      const vDevUnit = l2Normalize(vDev);
+      for (let d = 0; d < 512; d++) {
+        vStarImg[d] = imgAnchor[d] + 0.45 * vDevUnit[d];
+        vStarTxt[d] = 0.50 * mu[d] + 0.86 * vDevUnit[d];
+      }
+      optVecs.push({ vec: l2Normalize(vStarImg), txtVec: l2Normalize(vStarTxt), dev: vDevUnit, isTasteExplorer });
     }
 
     // Measure empirical orthogonality on the taste-neutral subspace
@@ -5159,31 +5563,18 @@
 
     if (onProgress) onProgress('Decoding 25 orthogonal vectors into concrete garment recipes & scoring...');
     // Precompute bank-normalized Dual Ridge (mu, sigma) in [-1, +1] to overcome CLIP image-text modality gap
-    const decodeBeta = gapCertMode === 'safe' ? -0.038 : gapCertMode === 'explore' ? 0.042 : 0.0;
-    const decodeMuW = 0.022;
-    function centerBankVecs(bankVecs) {
-      if (bankVecs.length < 2) return bankVecs;
-      const m = new Array(512).fill(0);
-      bankVecs.forEach(v => { for (let d = 0; d < 512; d++) m[d] += v[d]; });
-      for (let d = 0; d < 512; d++) m[d] /= bankVecs.length;
-      return bankVecs.map(v => centerClipVec(v, m));
-    }
-    const typeVecsC = centerBankVecs(banks.typeVecs);
-    const colorVecsC = centerBankVecs(banks.colorVecs);
-    const fabricVecsC = centerBankVecs(banks.fabricVecs);
-    const silVecsC = centerBankVecs(banks.silVecs);
+    const decodeBeta = gapCertMode === 'safe' ? -0.42 : gapCertMode === 'explore' ? 0.48 : 0.0;
+    const decodeMuW = gapCertMode === 'explore' ? 0.08 : 0.16;
 
-    function evalBankNormalized(bankVecs) {
-      if (ridge.n === 0 || !bankVecs.length) return bankVecs.map(() => ({ mu: 0, sigma: 0 }));
-      const cBank = centerBankVecs(bankVecs);
+    function evalBankNormalized(cBank) {
+      if (ridge.n === 0 || !cBank.length) return cBank.map(() => ({ mu: 0, sigma: 0 }));
       const rawSims = cBank.map(vec => ridge.samples.map(s => cosineSimilarity(vec, s.vMean)));
       let maxSim = -Infinity;
       rawSims.forEach(row => row.forEach(v => { if (v > maxSim) maxSim = v; }));
       const rawMu = [];
       const rawSigma = [];
-      for (let idx = 0; idx < bankVecs.length; idx++) {
-        // Shift text-to-image cosine relative to bank peak so modality gap doesn't crush k_i to ~0.10
-        const kVec = rawSims[idx].map(sim => Math.exp(-2.8 * Math.max(0, (maxSim - sim) / 0.12)));
+      for (let idx = 0; idx < cBank.length; idx++) {
+        const kVec = rawSims[idx].map(sim => Math.exp(-2.8 * Math.max(0, (maxSim - sim) / 0.35)));
         let delta = 0;
         for (let i = 0; i < ridge.n; i++) delta += ridge.alpha[i] * kVec[i];
         const explained = ridge.quadForm(kVec);
@@ -5197,25 +5588,29 @@
       };
       const muN = normArr(rawMu);
       const sigN = normArr(rawSigma);
-      return bankVecs.map((_, i) => ({ mu: muN[i], sigma: sigN[i] }));
+      return cBank.map((_, i) => ({ mu: muN[i], sigma: sigN[i] }));
     }
-    const colorRidge = evalBankNormalized(banks.colorVecs);
-    const fabRidge = evalBankNormalized(banks.fabricVecs);
-    const silRidge = evalBankNormalized(banks.silVecs);
+    const typeRidge = evalBankNormalized(typeVecsC);
+    const colorRidge = evalBankNormalized(colorVecsC);
+    const fabRidge = evalBankNormalized(fabricVecsC);
+    const silRidge = evalBankNormalized(silVecsC);
+    const patRidge = evalBankNormalized(patternVecsC);
 
     const usedTypes = {};
     const usedColors = {};
     const usedFabrics = {};
+    const usedPatterns = {};
     const decoded = [];
 
     for (let k = 0; k < optVecs.length; k++) {
       const vStar = optVecs[k].vec;
       const vDev = optVecs[k].dev || vStar;
       const isTasteExplorer = optVecs[k].isTasteExplorer;
-      // Decode centered deviation vDev against centered garment/color/fabric banks so shared cone mean doesn't collapse cards
+      // 100% pure Dual Ridge (mu, sigma) decoding against centered FashionCLIP banks (no hand-crafted familiarity hacks)
       let bestTypeIdx = 0, bestTypeScore = -99;
       for (let i = 0; i < CLIP_DECODE_TYPES.length; i++) {
-        const s = cosineSimilarity(vDev, typeVecsC[i]) - (usedTypes[i] || 0) * 0.45;
+        const acq = ridge.n > 0 ? (decodeMuW * typeRidge[i].mu + decodeBeta * typeRidge[i].sigma) : 0;
+        const s = cosineSimilarity(vDev, typeVecsC[i]) + acq - (usedTypes[i] || 0) * 0.50;
         if (s > bestTypeScore) { bestTypeScore = s; bestTypeIdx = i; }
       }
       usedTypes[bestTypeIdx] = (usedTypes[bestTypeIdx] || 0) + 1;
@@ -5224,7 +5619,7 @@
       let bestColorIdx = 0, bestColorScore = -99;
       for (let i = 0; i < CLIP_DECODE_COLORS.length; i++) {
         const acq = ridge.n > 0 ? (decodeMuW * colorRidge[i].mu + decodeBeta * colorRidge[i].sigma) : 0;
-        const s = cosineSimilarity(vDev, colorVecsC[i]) + acq - (usedColors[i] || 0) * 0.11;
+        const s = cosineSimilarity(vDev, colorVecsC[i]) + acq - (usedColors[i] || 0) * 0.16;
         if (s > bestColorScore) { bestColorScore = s; bestColorIdx = i; }
       }
       usedColors[bestColorIdx] = (usedColors[bestColorIdx] || 0) + 1;
@@ -5232,8 +5627,9 @@
 
       let bestFabIdx = 0, bestFabScore = -99;
       for (let i = 0; i < CLIP_DECODE_FABRICS.length; i++) {
+        if (CLIP_DECODE_FABRICS[i].cats && !CLIP_DECODE_FABRICS[i].cats.includes(gType.category)) continue;
         const acq = ridge.n > 0 ? (decodeMuW * fabRidge[i].mu + decodeBeta * fabRidge[i].sigma) : 0;
-        const s = cosineSimilarity(vDev, fabricVecsC[i]) + acq - (usedFabrics[i] || 0) * 0.11;
+        const s = cosineSimilarity(vDev, fabricVecsC[i]) + acq - (usedFabrics[i] || 0) * 0.16;
         if (s > bestFabScore) { bestFabScore = s; bestFabIdx = i; }
       }
       usedFabrics[bestFabIdx] = (usedFabrics[bestFabIdx] || 0) + 1;
@@ -5247,25 +5643,48 @@
       }
       const gSil = CLIP_DECODE_SILHOUETTES[bestSilIdx];
 
-      // Lightly align final embedding with decoded color/fabric/silhouette so card scores reflect the chosen recipe
-      const decodedVec = new Array(512);
-      const cv = banks.colorVecs[bestColorIdx];
-      const fv = banks.fabricVecs[bestFabIdx];
-      const sv = banks.silVecs[bestSilIdx];
-      for (let d = 0; d < 512; d++) {
-        decodedVec[d] = 0.82 * vStar[d] + 0.07 * cv[d] + 0.06 * fv[d] + 0.05 * sv[d];
+      let bestPatIdx = 0, bestPatScore = -99;
+      if (patternVecsC.length) {
+        for (let i = 0; i < CLIP_DECODE_PATTERNS.length; i++) {
+          const acq = ridge.n > 0 ? (decodeMuW * patRidge[i].mu + decodeBeta * patRidge[i].sigma) : 0;
+          const rep = CLIP_DECODE_PATTERNS[i].isSolid ? 0.02 : 0.14;
+          const s = cosineSimilarity(vDev, patternVecsC[i]) + acq - (usedPatterns[i] || 0) * rep;
+          if (s > bestPatScore) { bestPatScore = s; bestPatIdx = i; }
+        }
+        usedPatterns[bestPatIdx] = (usedPatterns[bestPatIdx] || 0) + 1;
       }
-      const finalVec = l2Normalize(decodedVec);
+      const gPat = CLIP_DECODE_PATTERNS[bestPatIdx] || { label: 'Solid', isSolid: true };
 
-      const meta = inferAttributesFromEmbedding(eng, finalVec);
+      // Keep finalVec anchored in closetMean image space (centered deviations only!) so evaluateOutfit sees zero modality gap
+      const imgAnchor = closetMean || mu;
+      const cvC = colorVecsC[bestColorIdx];
+      const fvC = fabricVecsC[bestFabIdx];
+      const svC = silVecsC[bestSilIdx];
+      const pvC = (patternVecsC && patternVecsC[bestPatIdx]) || svC;
+      const blendedDev = new Array(512);
+      for (let d = 0; d < 512; d++) {
+        blendedDev[d] = 0.80 * vDev[d] + 0.07 * cvC[d] + 0.05 * fvC[d] + 0.04 * svC[d] + 0.04 * pvC[d];
+      }
+      const blendedDevUnit = l2Normalize(blendedDev);
+      const decodedImgVec = new Array(512);
+      const decodedTxtVec = new Array(512);
+      for (let d = 0; d < 512; d++) {
+        decodedImgVec[d] = imgAnchor[d] + 0.45 * blendedDevUnit[d];
+        decodedTxtVec[d] = 0.50 * mu[d] + 0.86 * blendedDevUnit[d];
+      }
+      const finalVec = l2Normalize(decodedImgVec);
+
+      const meta = inferAttributesFromEmbedding(eng, l2Normalize(decodedTxtVec));
       const warmth = gType.defaultWarmth || meta.inferred.warmth || 3;
       const rain = gType.defaultRain || (gFab.label.includes('Waterproof') ? 1 : (meta.inferred.rain || 0));
       const formality = meta.inferred.formality || 3;
-      const name = `${gSil.label} ${gColor.label} ${gType.label}`;
+      const patPart = gPat.isSolid ? '' : `${gPat.label} `;
+      const name = `${gSil.label} ${gColor.label} ${patPart}${gType.label}`;
       const seasons = warmth >= 4 ? ['fall', 'winter'] : warmth <= 1 ? ['spring', 'summer'] : ['spring', 'fall'];
 
       decoded.push({
         id: `synth_${k + 1}`,
+        status: 'gap',
         category: gType.category,
         name,
         colorHex: gColor.hex,
@@ -5280,7 +5699,7 @@
         clipEmbedding: finalVec,
         clipInferred: meta.inferred,
         isTasteExplorer,
-        why: `Decoded from orthogonal 512-D vector #${k + 1}${isTasteExplorer ? ' (Explore)' : ''} · ${gFab.label} · Warmth ${warmth}/5 · Formality ${formality}/5.`
+        why: `Decoded from orthogonal 512-D vector #${k + 1}${isTasteExplorer ? ' (Explore)' : ''} · ${gFab.label}${gPat.isSolid ? '' : ` · ${gPat.label}`} · Warmth ${warmth}/5 · Formality ${formality}/5.`
       });
     }
 
@@ -5388,7 +5807,7 @@
       if (gapSortMode === 'coverage') return ((b.sim.gapTag ? 1 : 0) - (a.sim.gapTag ? 1 : 0)) || (b.sim.effectiveRank - a.sim.effectiveRank);
       if (gapSortMode === 'certainty') return (b.sim.topCertainty - a.sim.topCertainty) || (b.sim.topScore - a.sim.topScore);
       if (gapSortMode === 'uncertainty') return (a.sim.topCertainty - b.sim.topCertainty) || (b.sim.topScore - a.sim.topScore);
-      const certTilt = gapCertMode === 'safe' ? 0.12 : gapCertMode === 'explore' ? -0.12 : 0;
+      const certTilt = gapCertMode === 'safe' ? 0.45 : gapCertMode === 'explore' ? -0.45 : 0;
       const rankA = a.sim.effectiveRank + certTilt * a.sim.topCertainty;
       const rankB = b.sim.effectiveRank + certTilt * b.sim.topCertainty;
       return (rankB - rankA) || (b.sim.topScore - a.sim.topScore);
@@ -6449,7 +6868,24 @@
   document.getElementById('btnCloseItemModal').addEventListener('click', closeItemModal);
   document.getElementById('btnCancelItem').addEventListener('click', closeItemModal);
 
+  let pendingPhotoAnalysisPromise = null;
+  let pendingTryOnAnalysisPromise = null;
+  let bgPreloadStarted = false;
+
+  // Non-blocking parallel warmup of FashionCLIP + RMBG-1.4 so user can browse while models load
+  function preloadVisionModelsInParallel() {
+    if (bgPreloadStarted) return;
+    bgPreloadStarted = true;
+    ensureClipLoaded().catch(() => {
+      if (clipEngine.status === 'error') updateClipUI('idle', 'Load CLIP Vision');
+    });
+    ensureRmbgLoaded().catch(() => null);
+  }
+
   async function processUploadedGarmentPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const runTask = (async () => {
+      // Always load FashionCLIP in parallel with RMBG-1.4 background removal!
+      const clipWarmup = ensureClipLoaded().catch(() => null);
     pendingRawPhotoUrl = rawDataUrl;
     pendingPhotoDataUrl = rawDataUrl;
     document.getElementById('fColorHex').value = safeHex(rawHex);
@@ -6486,11 +6922,20 @@
       renderModalClipBox(res, null);
       const nameEl = document.getElementById('fName');
       if (!nameEl.value.trim()) {
-        nameEl.value = `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${res.inferred.category.charAt(0).toUpperCase() + res.inferred.category.slice(1)}`;
+        const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, res.inferred.category);
+        nameEl.value = smart
+          ? smart.name
+          : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${res.inferred.category.charAt(0).toUpperCase() + res.inferred.category.slice(1)}`;
       }
-      showToast(`Ready! CLIP inferred: ${res.inferred.category}, warmth ${res.inferred.warmth}/5.`);
+      await clipWarmup;
+      showToast(`Ready! FashionCLIP inferred: ${res.inferred.category}, warmth ${res.inferred.warmth}/5.`);
     } catch (err) {
-      renderModalClipBox(null, 'Could not run CLIP model right now. Photo saved; attributes remain optional.');
+      renderModalClipBox(null, 'Could not run FashionCLIP right now. Photo saved; attributes remain optional.');
+    }
+    })();
+    pendingPhotoAnalysisPromise = runTask;
+    try { await runTask; } finally {
+      if (pendingPhotoAnalysisPromise === runTask) pendingPhotoAnalysisPromise = null;
     }
   }
 
@@ -6522,6 +6967,13 @@
 
   document.getElementById('itemForm').addEventListener('submit', async e => {
     e.preventDefault();
+    if (pendingPhotoAnalysisPromise) {
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const prevText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Finishing AI analysis…'; }
+      try { await pendingPhotoAnalysisPromise; } catch (_) {}
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = prevText; }
+    }
     const id = document.getElementById('fId').value || ('i' + Date.now());
     const existing = state.items.find(x => x.id === id);
 
@@ -6835,6 +7287,8 @@
   });
 
   async function processTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const runTask = (async () => {
+    const clipWarmup = ensureClipLoaded().catch(() => null);
     const st = document.getElementById('tClipStatus');
     const prev = document.getElementById('tPhotoPreview');
     const btnRun = document.getElementById('btnRunTryOnRmbg');
@@ -6873,10 +7327,17 @@
       pendingTryOnClip = res;
       st.textContent = `CLIP 512-D ready: ${res.inferred.category} · warmth ${res.inferred.warmth}/5 · ${res.inferred.silhouette}`;
       if (!document.getElementById('tName').value.trim()) {
-        document.getElementById('tName').value = `Store ${res.inferred.silhouette} ${res.inferred.category}`;
+        const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, res.inferred.category);
+        document.getElementById('tName').value = smart ? smart.name : `Store ${res.inferred.silhouette} ${res.inferred.category}`;
       }
+      await clipWarmup;
     } catch (err) {
-      st.textContent = 'Photo attached (CLIP unavailable right now—color extracted).';
+      st.textContent = 'Photo attached (FashionCLIP unavailable right now—color extracted).';
+    }
+    })();
+    pendingTryOnAnalysisPromise = runTask;
+    try { await runTask; } finally {
+      if (pendingTryOnAnalysisPromise === runTask) pendingTryOnAnalysisPromise = null;
     }
   }
 
@@ -6904,6 +7365,13 @@
   });
 
   document.getElementById('btnAddTryOnToTray').addEventListener('click', async () => {
+    if (pendingTryOnAnalysisPromise) {
+      const btn = document.getElementById('btnAddTryOnToTray');
+      const prev = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Finishing AI analysis…'; }
+      try { await pendingTryOnAnalysisPromise; } catch (_) {}
+      if (btn) { btn.disabled = false; btn.textContent = prev; }
+    }
     const nameEl = document.getElementById('tName');
     const txt = document.getElementById('tClipText').value.trim();
     const st = document.getElementById('tClipStatus');
@@ -8257,6 +8725,8 @@
   // Init
   renderAll();
   hydrateFromIndexedDB();
+  // Warm up FashionCLIP + RMBG-1.4 in parallel in the background while user browses
+  setTimeout(() => preloadVisionModelsInParallel(), 800);
 })();
 </script>
 </body>
