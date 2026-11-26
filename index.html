@@ -4948,7 +4948,7 @@
     const ctx = getCurrentContext();
     document.getElementById('tempDisplay').textContent = ctxEnvMode === 'indoor' ? `${ctx.temp}°F (Indoor)` : `${ctx.temp}°F`;
     const pool = state.items.filter(i => i.status === 'owned' || (ctx.includeWishlist && i.status === 'wishlist'));
-    const trayLookup = id => state.items.find(p => p.id === id && (p.status === 'owned' || p.status === 'tryon' || (ctx.includeWishlist && p.status === 'wishlist')));
+    const trayLookup = id => state.items.find(p => p.id === id && (p.status === 'owned' || p.status === 'tryon' || p.status === 'wishlist'));
     // Clean any removed IDs from tray (preserve in-store try-on pieces!)
     builderItemIds = builderItemIds.filter(id => Boolean(trayLookup(id)));
 
@@ -5208,7 +5208,7 @@
     updateWearOnlyTrayBtn();
     const ctx = getCurrentContext();
     const excludedSet = new Set(excludedSugItemIds);
-    const pool = state.items.filter(i => !excludedSet.has(i.id) && (i.status === 'owned' || (ctx.includeWishlist && i.status === 'wishlist')));
+    const pool = state.items.filter(i => !excludedSet.has(i.id) && (i.status === 'owned' || seedItemIds.includes(i.id) || (ctx.includeWishlist && i.status === 'wishlist')));
     const seeds = seedItemIds.map(id => state.items.find(x => x.id === id)).filter(Boolean);
 
     if (wearOnlyInTray) {
