@@ -3444,8 +3444,10 @@
     let thermalScore = Math.max(5, sBody);
     let sLow = 100;
     if (hasUpper && hasLower) {
-      sLow = quadThermal(temp - T_ideal_lower, 8, 2);
-      thermalScore = Math.max(5, Math.min(100, Math.round(0.60 * sBody + 0.40 * sLow)));
+      const lowSigma = weather === 'indoor' ? 16 : 8;
+      const lowWeight = weather === 'indoor' ? 0.15 : 0.40;
+      sLow = quadThermal(temp - T_ideal_lower, lowSigma, 2);
+      thermalScore = Math.max(5, Math.min(100, Math.round((1 - lowWeight) * sBody + lowWeight * sLow)));
     }
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
     const hasHeavyOuterwear = items.some(it => it.category === 'outerwear' && Number(effAttr(it, 'warmth', 3)) >= 4);
