@@ -5167,8 +5167,9 @@
     if (!bestHigh) return evLow;
 
     const combinedStyle = Math.round(evLow.styleScore * 0.50 + bestHigh.ev.styleScore * 0.50);
+    const minLegWeather = Math.min(evLow.weatherScore, bestHigh.ev.weatherScore);
     const combinedWeather = Math.round(
-      evLow.weatherScore * 0.45 + bestHigh.ev.weatherScore * 0.45 + Math.min(evLow.weatherScore, bestHigh.ev.weatherScore) * 0.10
+      evLow.weatherScore * 0.30 + bestHigh.ev.weatherScore * 0.30 + minLegWeather * 0.40
     );
     const combinedScore = Math.round(combinedStyle * 0.50 + combinedWeather * 0.30 + (evLow.comfortScore || 75) * 0.20);
 
@@ -5177,6 +5178,7 @@
       score: Math.max(10, Math.min(99, combinedScore)),
       styleScore: combinedStyle,
       weatherScore: combinedWeather,
+      minLegWeather,
       comfortScore: evLow.comfortScore,
       breakdown: { ...evLow.breakdown, thermal: combinedWeather },
       swingInfo: {
@@ -5422,10 +5424,11 @@
       const formGap = Math.abs(avgF - targetF);
       // Context gates: prevent high-rated formal/heavy outfits from dominating mismatched formality or temperature
       const formMismatchPenalty = formGap > 1.2 ? (formGap - 1.2) * 22 : 0;
-      const wxMismatchPenalty = wxScore < 60 ? (60 - wxScore) * 0.85 : 0;
+      const worstWx = best.ev.minLegWeather ?? wxScore;
+      const wxMismatchPenalty = (wxScore < 60 ? (60 - wxScore) * 0.85 : 0) + (worstWx < 65 ? (65 - worstWx) * 0.90 : 0);
       const contextScore = stScore * 0.52 + wxScore * 0.48 - wxMismatchPenalty - formMismatchPenalty;
-      const isExperimental = (best.ev.certainty <= 78 || hasUntestedPiece) && stScore >= 55 && wxScore >= 55 && formGap <= 1.5;
-      const expScore = (stScore >= 55 && wxScore >= 55 && formGap <= 1.5)
+      const isExperimental = (best.ev.certainty <= 78 || hasUntestedPiece) && stScore >= 55 && wxScore >= 55 && worstWx >= 60 && formGap <= 1.5;
+      const expScore = (stScore >= 55 && wxScore >= 55 && worstWx >= 60 && formGap <= 1.5)
         ? (contextScore * 0.58 + (100 - best.ev.certainty) * 0.42)
         : (contextScore * 0.45);
       const stapleScore = contextScore * 0.72 + best.ev.certainty * 0.28;
