@@ -2852,7 +2852,7 @@
       for (let i = 0; i < CLIP_CLO_PROMPTS.length; i++) clipClo += cProbs[i] * CLIP_CLO_PROMPTS[i].clo;
     }
 
-    if (clipClo !== null && manualClo !== null) return clipClo * 0.45 + manualClo * 0.55;
+    if (clipClo !== null && manualClo !== null) return clipClo * 0.10 + manualClo * 0.90;
     if (manualClo !== null) return manualClo;
     if (clipClo !== null) return clipClo;
     const fallbackW = Number(effAttr(item, 'warmth', 3));
@@ -3433,15 +3433,16 @@
     const T_ideal = Math.round(tPred.T_ideal);
     const T_ideal_upper = Math.max(12, Math.min(90, T_upper_clo + tPred.deltaT));
     const T_ideal_lower = Math.max(12, Math.min(90, T_lower_clo + tPred.deltaT));
-    const quadThermal = (diff, sigma, deadband = 3) => {
+    const quadThermal = (diff, sigmaCold, sigmaWarm = sigmaCold, deadband = 3) => {
+      const sigma = diff < 0 ? sigmaCold : sigmaWarm;
       const d = Math.max(0, Math.abs(diff) - deadband);
       return Math.max(5, Math.min(100, Math.round(100 - 25 * Math.pow(d / sigma, 2))));
     };
-    const sBody = quadThermal(temp - tPred.T_ideal, 13, 3);
+    const sBody = quadThermal(temp - tPred.T_ideal, 9, 16, 3);
     let thermalScore = sBody;
     let sLow = 100;
     if (hasUpper && hasLower) {
-      sLow = quadThermal(temp - T_ideal_lower, 18, 3);
+      sLow = quadThermal(temp - T_ideal_lower, 9, 16, 3);
       thermalScore = Math.max(5, Math.min(100, Math.round(0.60 * sBody + 0.40 * sLow)));
     }
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
