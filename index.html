@@ -264,6 +264,13 @@
 
 <!-- MAIN CONTENT -->
 <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+  <div id="envExportWarningBanner" class="hidden mb-5 p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start justify-between gap-3 shadow-sm" role="alert">
+    <div class="text-xs leading-relaxed">
+      <strong class="font-bold">Heads up — JSON Export &amp; Import may be blocked in this viewer:</strong>
+      <span id="envExportWarningText">You appear to be opening Atelier Index inside an in-app browser or restricted preview. Before adding your closet, tap <strong>&#8943;</strong> (or Share) &rarr; <strong>Open in Safari / Chrome</strong> so you can export and import JSON backups reliably.</span>
+    </div>
+    <button type="button" id="btnDismissEnvWarning" class="px-2 py-0.5 rounded-md text-amber-900 hover:bg-amber-200/70 text-xs font-bold shrink-0" aria-label="Dismiss warning">&times;</button>
+  </div>
 
   <!-- VIEW 1: INDYX-STYLE VISUAL CLOSET GALLERY -->
   <section id="view-closet" class="view-section space-y-5">
@@ -7591,7 +7598,7 @@
         <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-800">Rainproof: <strong>${inf.rain ? 'Yes' : 'No'}</strong> (${c.rain}%)</span>
       </div>
       ${res.nudgeText ? `<p class="text-[10px] text-indigo-800 bg-indigo-50/80 border border-indigo-100 rounded px-2 py-1 mt-1"><strong>512-D Nudge Active:</strong> ${escapeHtml(res.nudgeText)}</p>` : ''}
-      <p class="text-[10px] text-slate-500">Leave any dropdown below on "Auto / Unknown (CLIP)" to use these AI predictions, or override manually.</p>
+      <p class="text-[10px] text-slate-500">Dropdowns below were pre-filled with CLIP&rsquo;s predictions for easy review &mdash; adjust any field or switch back to &ldquo;Auto / Unknown (CLIP)&rdquo; anytime.</p>
     `;
   }
 
@@ -7605,6 +7612,7 @@
     pendingClipResult = null;
     document.getElementById('fPhotoPreview').innerHTML = 'No photo';
     document.getElementById('modalClipBox').classList.add('hidden');
+    resetModalClipAutofillStyles();
     document.getElementById('btnRunRmbgNow').classList.add('hidden');
     document.getElementById('btnRevertRawPhoto').classList.add('hidden');
         const rotModalBtn = document.getElementById('btnRotatePhoto90');
@@ -7908,7 +7916,49 @@
     delete e.target.dataset.autoNamed;
   });
 
+  const CLIP_AUTOFILL_FIELD_IDS = ['fCategory', 'fWarmth', 'fFormality', 'fSilhouette', 'fRain'];
+  function resetModalClipAutofillStyles() {
+    CLIP_AUTOFILL_FIELD_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      delete el.dataset.clipAutofilled;
+      el.classList.remove('ring-1', 'ring-indigo-300', 'bg-indigo-50/40');
+    });
+  }
+  function populateModalFieldsFromClip(inf) {
+    if (!inf) return;
+    const mapping = {
+      fCategory: inf.category,
+      fWarmth: inf.warmth,
+      fFormality: inf.formality,
+      fSilhouette: inf.silhouette,
+      fRain: inf.rain
+    };
+    Object.entries(mapping).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (!el || val === null || val === undefined || val === '') return;
+      if (el.value === '' || el.dataset.clipAutofilled === '1') {
+        el.value = String(val);
+        el.dataset.clipAutofilled = '1';
+        el.classList.add('ring-1', 'ring-indigo-300', 'bg-indigo-50/40');
+      }
+    });
+  }
+  CLIP_AUTOFILL_FIELD_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      delete el.dataset.clipAutofilled;
+      el.classList.remove('ring-1', 'ring-indigo-300', 'bg-indigo-50/40');
+    });
+  });
+
+  let modalPhotoRunId = 0;
+  let tryOnPhotoRunId = 0;
+  let sugTryPhotoRunId = 0;
+
   async function processUploadedGarmentPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const runId = ++modalPhotoRunId;
     const runTask = (async () => {
       const nameEl = document.getElementById('fName');
       const shouldLockName = Boolean(nameEl && (!nameEl.value.trim() || nameEl.dataset.autoNamed === '1'));
@@ -7930,7 +7980,8 @@
         if (runNeuralRmbg) {
           renderModalClipBox(null, 'Step 1/2: Removing background with RMBG-1.4...');
           try {
-            const cut = await runRmbgCutout(rawDataUrl, msg => renderModalClipBox(null, msg));
+            const cut = await runRmbgCutout(rawDataUrl, msg => { if (runId === modalPhotoRunId) renderModalClipBox(null, msg); });
+            if (runId !== modalPhotoRunId) return;
             pendingPhotoDataUrl = cut.cutoutPng;
             clipTargetUrl = cut.clipInputJpg;
             document.getElementById('fColorHex').value = safeHex(cut.dominantHex);
@@ -7938,10 +7989,12 @@
             document.getElementById('btnRevertRawPhoto').classList.remove('hidden');
             document.getElementById('btnRunRmbgNow').classList.add('hidden');
           } catch (rmbgErr) {
+            if (runId !== modalPhotoRunId) return;
             renderModalClipBox(null, 'RMBG-1.4 unavailable—falling back to raw photo for CLIP...');
             document.getElementById('btnRunRmbgNow').classList.remove('hidden');
           }
         }
+        if (runId !== modalPhotoRunId) return;
 
         renderModalClipBox(null, runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D CLIP...' : 'Running CLIP-ViT-B/32 on your garment photo...');
         try {
@@ -7949,13 +8002,16 @@
           const rawNote = attrs.clipTextNote;
           const vecNudge = buildAttributeNudgeText(attrs, false);
           const w = Number(document.getElementById('fClipWeight').value) / 100;
-          const res = await analyzeImageWithClip(clipTargetUrl, msg => renderModalClipBox(null, msg), rawNote, w, vecNudge);
+          const res = await analyzeImageWithClip(clipTargetUrl, msg => { if (runId === modalPhotoRunId) renderModalClipBox(null, msg); }, rawNote, w, vecNudge);
+          if (runId !== modalPhotoRunId) return;
           res.nudgeText = rawNote;
           pendingClipResult = res;
+          populateModalFieldsFromClip(res.inferred);
           if (shouldLockName || (nameEl && !nameEl.value.trim())) {
             renderModalClipBox(null, 'Naming piece with FashionCLIP taxonomy...');
             const chosenCat = document.getElementById('fCategory').value || res.inferred.category;
-            const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => renderModalClipBox(null, msg));
+            const smart = await decodeSmartGarmentName(clipEngine, res.imageEmbedding512 || res.embedding512, chosenCat, msg => { if (runId === modalPhotoRunId) renderModalClipBox(null, msg); });
+            if (runId !== modalPhotoRunId) return;
             nameEl.value = smart
               ? smart.name
               : `${res.inferred.silhouette.charAt(0).toUpperCase() + res.inferred.silhouette.slice(1)} ${res.inferred.category.charAt(0).toUpperCase() + res.inferred.category.slice(1)}`;
@@ -7963,12 +8019,14 @@
           }
           renderModalClipBox(res, null);
           await clipWarmup;
+          if (runId !== modalPhotoRunId) return;
           showToast(`Ready! FashionCLIP inferred: ${res.inferred.category}, warmth ${res.inferred.warmth}/5.`);
         } catch (err) {
+          if (runId !== modalPhotoRunId) return;
           renderModalClipBox(null, 'Could not run FashionCLIP right now. Photo saved; attributes remain optional.');
         }
       } finally {
-        if (shouldLockName) setNameInputClipLock(nameEl, false);
+        if (shouldLockName && runId === modalPhotoRunId) setNameInputClipLock(nameEl, false);
       }
     })();
     pendingPhotoAnalysisPromise = runTask;
@@ -8331,6 +8389,7 @@
   });
 
   async function processTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const runId = ++tryOnPhotoRunId;
     const runTask = (async () => {
     const tNameLockEl = document.getElementById('tName');
     const shouldLockTName = Boolean(tNameLockEl && (!tNameLockEl.value.trim() || tNameLockEl.dataset.autoNamed === '1'));
@@ -8360,7 +8419,8 @@
     if (runNeuralRmbg) {
       st.textContent = 'Step 1/2: Removing background with RMBG-1.4...';
       try {
-        const cut = await runRmbgCutout(rawDataUrl, msg => { st.textContent = msg; });
+        const cut = await runRmbgCutout(rawDataUrl, msg => { if (runId === tryOnPhotoRunId) st.textContent = msg; });
+        if (runId !== tryOnPhotoRunId) return;
         pendingTryOnPhoto = cut.cutoutPng;
         clipTargetUrl = cut.clipInputJpg;
         document.getElementById('tColorHex').value = safeHex(cut.dominantHex);
@@ -8376,7 +8436,8 @@
     st.textContent = runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D FashionCLIP...' : 'Running FashionCLIP on try-on photo...';
     try {
       const txt = document.getElementById('tClipText').value.trim();
-      const res = await analyzeImageWithClip(clipTargetUrl, msg => { st.textContent = msg; }, txt, 0.35);
+      const res = await analyzeImageWithClip(clipTargetUrl, msg => { if (runId === tryOnPhotoRunId) st.textContent = msg; }, txt, 0.35);
+      if (runId !== tryOnPhotoRunId) return;
       pendingTryOnClip = res;
       await clipWarmup;
       const tNameEl = document.getElementById('tName');
@@ -8683,6 +8744,7 @@
   });
 
   async function processSugTryOnPhoto(rawDataUrl, rawHex, runNeuralRmbg) {
+    const runId = ++sugTryPhotoRunId;
     const runTask = (async () => {
       const stNameLockEl = document.getElementById('stName');
       const shouldLockStName = Boolean(stNameLockEl && (!stNameLockEl.value.trim() || stNameLockEl.dataset.autoNamed === '1'));
@@ -8716,7 +8778,8 @@
       if (runNeuralRmbg) {
         st.textContent = 'Step 1/2: Removing background with RMBG-1.4...';
         try {
-          const cut = await runRmbgCutout(rawDataUrl, msg => { st.textContent = msg; });
+          const cut = await runRmbgCutout(rawDataUrl, msg => { if (runId === sugTryPhotoRunId) st.textContent = msg; });
+          if (runId !== sugTryPhotoRunId) return;
           pendingSugTryPhoto = cut.cutoutPng;
           pendingSugTryHex = safeHex(cut.dominantHex);
           clipTargetUrl = cut.clipInputJpg;
@@ -8733,7 +8796,8 @@
       st.textContent = runNeuralRmbg ? 'Step 2/2: Embedding clean cutout in 512-D FashionCLIP...' : 'Running FashionCLIP on anchor photo...';
       try {
         const txt = document.getElementById('stClipText').value.trim();
-        const res = await analyzeImageWithClip(clipTargetUrl, msg => { st.textContent = msg; }, txt, 0.35);
+        const res = await analyzeImageWithClip(clipTargetUrl, msg => { if (runId === sugTryPhotoRunId) st.textContent = msg; }, txt, 0.35);
+        if (runId !== sugTryPhotoRunId) return;
         pendingSugTryClip = res;
         await clipWarmup;
         const stNameEl = document.getElementById('stName');
@@ -9283,46 +9347,159 @@
     });
   }
 
+  let modalRotateTimer = null, modalRotating = false;
   const btnRotModal = document.getElementById('btnRotatePhoto90');
   if (btnRotModal) {
     btnRotModal.addEventListener('click', async () => {
-      const src = pendingRawPhotoUrl || pendingPhotoDataUrl;
+      if (modalRotating) return;
+      const autoRmbg = document.getElementById('fAutoRmbg').checked;
+      const hasCutout = Boolean(pendingPhotoDataUrl && pendingPhotoDataUrl.startsWith('data:image/png;base64,'));
+      const src = (autoRmbg && hasCutout) ? pendingPhotoDataUrl : (pendingRawPhotoUrl || pendingPhotoDataUrl);
       if (!src) return;
+      modalRotating = true;
       try {
-        const rotated = await rotateImageDataUrl90(src);
-        pendingPhotoChanged = true;
-        pendingClipResult = null;
-        const autoRmbg = document.getElementById('fAutoRmbg').checked;
-        processUploadedGarmentPhoto(rotated, document.getElementById('fColorHex').value, autoRmbg);
+        modalPhotoRunId++; // Cancel any in-flight RMBG/CLIP so old frames never overwrite
+        if (autoRmbg && hasCutout) {
+          const [rotCut, rotRaw] = await Promise.all([
+            rotateImageDataUrl90(pendingPhotoDataUrl),
+            pendingRawPhotoUrl && pendingRawPhotoUrl !== pendingPhotoDataUrl ? rotateImageDataUrl90(pendingRawPhotoUrl) : Promise.resolve(null)
+          ]);
+          pendingPhotoDataUrl = rotCut;
+          if (rotRaw) pendingRawPhotoUrl = rotRaw;
+          pendingPhotoChanged = true;
+          pendingClipResult = null;
+          document.getElementById('fPhotoPreview').innerHTML = `<img src="${rotCut}" class="w-full h-full object-contain" alt="Rotated Cutout">`;
+          renderModalClipBox(null, 'Rotated cutout 90° — re-embedding in CLIP shortly (no BG re-run needed)...');
+          clearTimeout(modalRotateTimer);
+          modalRotateTimer = setTimeout(async () => {
+            const savedRaw = pendingRawPhotoUrl;
+            await processUploadedGarmentPhoto(pendingPhotoDataUrl, document.getElementById('fColorHex').value, false);
+            if (savedRaw) {
+              pendingRawPhotoUrl = savedRaw;
+              document.getElementById('btnRevertRawPhoto').classList.remove('hidden');
+            }
+          }, 500);
+        } else {
+          const rotated = await rotateImageDataUrl90(src);
+          pendingRawPhotoUrl = rotated;
+          pendingPhotoDataUrl = rotated;
+          pendingPhotoChanged = true;
+          pendingClipResult = null;
+          document.getElementById('fPhotoPreview').innerHTML = `<img src="${rotated}" class="w-full h-full object-contain" alt="Rotated Preview">`;
+          renderModalClipBox(null, autoRmbg ? 'Rotated 90° — pause to run AI cutout & CLIP...' : 'Rotated 90° — pause to update CLIP...');
+          clearTimeout(modalRotateTimer);
+          modalRotateTimer = setTimeout(() => {
+            processUploadedGarmentPhoto(pendingRawPhotoUrl, document.getElementById('fColorHex').value, document.getElementById('fAutoRmbg').checked);
+          }, 500);
+        }
       } catch (_) {}
+      finally { modalRotating = false; }
     });
   }
 
+  let tryOnRotateTimer = null, tryOnRotating = false;
   const btnRotTryOn = document.getElementById('btnRotateTryOn90');
   if (btnRotTryOn) {
     btnRotTryOn.addEventListener('click', async () => {
-      const src = pendingTryOnRawPhoto || pendingTryOnPhoto;
+      if (tryOnRotating) return;
+      const autoRmbg = document.getElementById('tAutoRmbg').checked;
+      const hasCutout = Boolean(pendingTryOnPhoto && pendingTryOnPhoto.startsWith('data:image/png;base64,'));
+      const src = (autoRmbg && hasCutout) ? pendingTryOnPhoto : (pendingTryOnRawPhoto || pendingTryOnPhoto);
       if (!src) return;
+      tryOnRotating = true;
       try {
-        const rotated = await rotateImageDataUrl90(src);
-        pendingTryOnClip = null;
-        const autoRmbg = document.getElementById('tAutoRmbg').checked;
-        processTryOnPhoto(rotated, document.getElementById('tColorHex').value, autoRmbg);
+        tryOnPhotoRunId++;
+        if (autoRmbg && hasCutout) {
+          const [rotCut, rotRaw] = await Promise.all([
+            rotateImageDataUrl90(pendingTryOnPhoto),
+            pendingTryOnRawPhoto && pendingTryOnRawPhoto !== pendingTryOnPhoto ? rotateImageDataUrl90(pendingTryOnRawPhoto) : Promise.resolve(null)
+          ]);
+          pendingTryOnPhoto = rotCut;
+          if (rotRaw) pendingTryOnRawPhoto = rotRaw;
+          pendingTryOnClip = null;
+          const prev = document.getElementById('tPhotoPreview');
+          if (prev) prev.innerHTML = `<img src="${rotCut}" class="w-full h-full object-contain" alt="Rotated Cutout">`;
+          const st = document.getElementById('tClipStatus');
+          if (st) { st.classList.remove('hidden'); st.textContent = 'Rotated cutout 90° — updating CLIP shortly...'; }
+          clearTimeout(tryOnRotateTimer);
+          tryOnRotateTimer = setTimeout(async () => {
+            const savedRaw = pendingTryOnRawPhoto;
+            await processTryOnPhoto(pendingTryOnPhoto, document.getElementById('tColorHex').value, false);
+            if (savedRaw) {
+              pendingTryOnRawPhoto = savedRaw;
+              document.getElementById('btnRevertTryOnRaw').classList.remove('hidden');
+            }
+          }, 500);
+        } else {
+          const rotated = await rotateImageDataUrl90(src);
+          pendingTryOnRawPhoto = rotated;
+          pendingTryOnPhoto = rotated;
+          pendingTryOnClip = null;
+          const prev = document.getElementById('tPhotoPreview');
+          if (prev) prev.innerHTML = `<img src="${rotated}" class="w-full h-full object-contain" alt="Rotated Try-on Preview">`;
+          const st = document.getElementById('tClipStatus');
+          if (st) { st.classList.remove('hidden'); st.textContent = autoRmbg ? 'Rotated 90° — pause for AI cutout & CLIP...' : 'Rotated 90° — pause for CLIP...'; }
+          clearTimeout(tryOnRotateTimer);
+          tryOnRotateTimer = setTimeout(() => {
+            processTryOnPhoto(pendingTryOnRawPhoto, document.getElementById('tColorHex').value, document.getElementById('tAutoRmbg').checked);
+          }, 500);
+        }
       } catch (_) {}
+      finally { tryOnRotating = false; }
     });
   }
 
+  let sugTryRotateTimer = null, sugTryRotating = false;
   const btnRotSugTry = document.getElementById('btnRotateSugTry90');
   if (btnRotSugTry) {
     btnRotSugTry.addEventListener('click', async () => {
-      const src = pendingSugTryRawPhoto || pendingSugTryPhoto;
+      if (sugTryRotating) return;
+      const autoRmbg = Boolean(document.getElementById('stAutoRmbg') && document.getElementById('stAutoRmbg').checked);
+      const hasCutout = Boolean(pendingSugTryPhoto && pendingSugTryPhoto.startsWith('data:image/png;base64,'));
+      const src = (autoRmbg && hasCutout) ? pendingSugTryPhoto : (pendingSugTryRawPhoto || pendingSugTryPhoto);
       if (!src) return;
+      sugTryRotating = true;
       try {
-        const rotated = await rotateImageDataUrl90(src);
-        pendingSugTryClip = null;
-        const autoRmbg = document.getElementById('stAutoRmbg') && document.getElementById('stAutoRmbg').checked;
-        processSugTryOnPhoto(rotated, document.getElementById('stColorHex').value, autoRmbg);
+        sugTryPhotoRunId++;
+        if (autoRmbg && hasCutout) {
+          const [rotCut, rotRaw] = await Promise.all([
+            rotateImageDataUrl90(pendingSugTryPhoto),
+            pendingSugTryRawPhoto && pendingSugTryRawPhoto !== pendingSugTryPhoto ? rotateImageDataUrl90(pendingSugTryRawPhoto) : Promise.resolve(null)
+          ]);
+          pendingSugTryPhoto = rotCut;
+          if (rotRaw) pendingSugTryRawPhoto = rotRaw;
+          pendingSugTryClip = null;
+          const prev = document.getElementById('stPhotoPreview');
+          if (prev) prev.innerHTML = `<img src="${rotCut}" class="w-full h-full object-contain" alt="Rotated Cutout">`;
+          const st = document.getElementById('stClipStatus');
+          if (st) { st.classList.remove('hidden'); st.textContent = 'Rotated cutout 90° — updating CLIP shortly...'; }
+          clearTimeout(sugTryRotateTimer);
+          sugTryRotateTimer = setTimeout(async () => {
+            const savedRaw = pendingSugTryRawPhoto;
+            await processSugTryOnPhoto(pendingSugTryPhoto, document.getElementById('stColorHex').value, false);
+            if (savedRaw) {
+              pendingSugTryRawPhoto = savedRaw;
+              const btnRev = document.getElementById('btnRevertSugTryRaw');
+              if (btnRev) btnRev.classList.remove('hidden');
+            }
+          }, 500);
+        } else {
+          const rotated = await rotateImageDataUrl90(src);
+          pendingSugTryRawPhoto = rotated;
+          pendingSugTryPhoto = rotated;
+          pendingSugTryClip = null;
+          const prev = document.getElementById('stPhotoPreview');
+          if (prev) prev.innerHTML = `<img src="${rotated}" class="w-full h-full object-contain" alt="Rotated Anchor Preview">`;
+          const st = document.getElementById('stClipStatus');
+          if (st) { st.classList.remove('hidden'); st.textContent = autoRmbg ? 'Rotated 90° — pause for AI cutout & CLIP...' : 'Rotated 90° — pause for CLIP...'; }
+          clearTimeout(sugTryRotateTimer);
+          sugTryRotateTimer = setTimeout(() => {
+            const rmbgOn = Boolean(document.getElementById('stAutoRmbg') && document.getElementById('stAutoRmbg').checked);
+            processSugTryOnPhoto(pendingSugTryRawPhoto, document.getElementById('stColorHex').value, rmbgOn);
+          }, 500);
+        }
       } catch (_) {}
+      finally { sugTryRotating = false; }
     });
   }
 
@@ -9675,6 +9852,7 @@
         styleTags: meta.styleTags,
         nudgeText: rawNote
       };
+      populateModalFieldsFromClip(pendingClipResult.inferred);
       renderModalClipBox(pendingClipResult, null);
       showToast('Updated 512-D CLIP analysis & embedding!');
     } catch (err) {
@@ -10175,7 +10353,51 @@
 
   function isInAppBrowser() {
     const ua = (navigator.userAgent || '').toLowerCase();
-    return /fban|fbav|fb_iab|messenger|instagram|micromessenger|line\/|tiktok|snapchat|twitter|wv\)/.test(ua);
+    return /fban|fbav|fb_iab|messenger|instagram|micromessenger|line\/|tiktok|snapchat|twitter|reddit|linkedinapp|pinterest|wv\)/.test(ua);
+  }
+
+  function getExportImportRestrictionReason() {
+    if (isInAppBrowser()) {
+      return 'You appear to be inside an in-app browser (like Messenger, Instagram, WeChat, or LINE), which blocks JSON downloads/backups. Tap ⋯ (or Share) → Open in Safari or Chrome before adding your closet.';
+    }
+    if (typeof Blob === 'undefined' || typeof FileReader === 'undefined') {
+      return 'This browser does not support file Blob/FileReader APIs needed for JSON Export & Import. Open this page in Safari, Chrome, Edge, or Firefox.';
+    }
+    let storageBlocked = false;
+    try {
+      const k = '__atelier_env_test__';
+      localStorage.setItem(k, '1');
+      localStorage.removeItem(k);
+    } catch (_) {
+      storageBlocked = true;
+    }
+    let isRestrictedIframe = false;
+    try {
+      if (window.self !== window.top && (window.origin === 'null' || location.protocol === 'about:' || storageBlocked)) {
+        isRestrictedIframe = true;
+      }
+    } catch (_) {
+      isRestrictedIframe = true;
+    }
+    if (isRestrictedIframe || storageBlocked) {
+      return 'You are viewing this inside an embedded/sandboxed preview where JSON Export/Import or browser storage may be restricted. Open the hosted URL directly in Safari or Chrome for reliable backups.';
+    }
+    return null;
+  }
+
+  function checkExportImportEnvironment() {
+    const banner = document.getElementById('envExportWarningBanner');
+    const txt = document.getElementById('envExportWarningText');
+    const dismissBtn = document.getElementById('btnDismissEnvWarning');
+    if (dismissBtn && !dismissBtn.dataset.bound) {
+      dismissBtn.dataset.bound = '1';
+      dismissBtn.addEventListener('click', () => { if (banner) banner.classList.add('hidden'); });
+    }
+    const reason = getExportImportRestrictionReason();
+    if (reason && banner && txt) {
+      txt.textContent = reason;
+      banner.classList.remove('hidden');
+    }
   }
 
   // Export (Native Mobile Share Sheet on phones -> iCloud/Drive/AirDrop, with desktop download fallback)
@@ -10429,6 +10651,7 @@
   document.getElementById('rCity').addEventListener('change', e => setSavedCity(e.target.value));
 
   // Init
+  checkExportImportEnvironment();
   renderAll();
   hydrateFromIndexedDB();
   // Warm up FashionCLIP + RMBG-1.4 in parallel in the background while user browses
