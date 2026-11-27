@@ -1558,6 +1558,22 @@
         <div id="rateCulpritWrap" class="flex flex-wrap gap-1.5"></div>
         <p class="text-[10px] text-slate-600 mt-1"><strong>How to rate:</strong> Score the whole outfit honestly as-is above, then tap any culprit piece(s) here. Only pairs involving tagged culprits get penalized—innocent pieces in the outfit are spared.</p>
       </div>
+      <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <label for="rPhoto" class="text-xs font-semibold text-slate-700">Outfit Photo / Mirror Shot (Optional)</label>
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="btnRotateRatePhoto90" class="hidden px-2 py-0.5 rounded bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-[10px] font-semibold" title="Rotate photo 90° clockwise">&#8635; 90&deg;</button>
+            <button type="button" id="btnClearRatePhoto" class="hidden px-2 py-0.5 rounded bg-white border border-rose-200 hover:bg-rose-50 text-rose-700 text-[10px] font-semibold">Remove</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 min-w-0">
+            <input type="file" id="rPhoto" accept="image/*" class="block w-full text-xs text-slate-700 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-white hover:file:bg-slate-700">
+            <p class="text-[10px] text-slate-500 mt-1">Shown in Calendar / Log by default (with a toggle back to the Lookbook Canvas). Saved inside your JSON backup.</p>
+          </div>
+          <div id="rPhotoPreview" class="w-14 h-16 rounded-lg bg-white border border-slate-200 flex items-center justify-center overflow-hidden text-[10px] text-slate-400 shrink-0">None</div>
+        </div>
+      </div>
       <div>
         <label for="rNotes" class="block text-xs font-semibold text-slate-700 mb-1">Notes (Why did it work or not?)</label>
         <input type="text" id="rNotes" placeholder="e.g. Great proportions, coat blocked wind well" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs">
@@ -3784,6 +3800,7 @@
       thermal: ['unknown', 'cold', 'right', 'hot'].includes(l.thermal) ? l.thermal : 'unknown',
       culpritIds: Array.isArray(l.culpritIds) ? l.culpritIds.filter(x => typeof x === 'string') : [],
       lookbookLayout: (l.lookbookLayout && typeof l.lookbookLayout === 'object') ? l.lookbookLayout : {},
+      outfitPhoto: safePhotoSrc(l.outfitPhoto),
       notes: typeof l.notes === 'string' ? l.notes.slice(0, 400) : ''
     })) : [];
 
@@ -4616,6 +4633,7 @@
         <button type="button" data-action="delete" data-id="${it.id}" class="item-act px-3 py-1.5 rounded-full text-xs font-medium text-[#A6463A] hover:bg-[#FBF1EE] transition">Delete</button>
       </div>
     `;
+    if (typeof attachInteractiveCardLookbooks === 'function') attachInteractiveCardLookbooks(body);
     modal.classList.remove('hidden');
   }
 
@@ -7116,18 +7134,24 @@
       }).filter(Boolean);
       const layout = getCardLayout('log', log.id, items);
       const worked = log.aesthetic >= 4 && log.comfort >= 4 && (log.thermal === 'right' || log.thermal === 'unknown');
+      const hasPhoto = Boolean(log.outfitPhoto && safePhotoSrc(log.outfitPhoto));
+      const viewMode = hasPhoto ? (logCardViewMode[log.id] || 'photo') : 'canvas';
+      const showRealPhoto = hasPhoto && viewMode === 'photo';
       return `
         <article data-open-log="${log.id}" class="closet-card group cursor-pointer bg-white rounded-2xl border border-[#EAE4DC] overflow-hidden flex flex-col">
-          <div class="relative aspect-[3/4] w-full overflow-hidden ${useCutoutBg ? 'lookbook-cutout' : ''}" style="background:radial-gradient(circle at 50% 42%, #FDFBF8 0%, #F2EDE5 100%);">
-            ${items.map(it => {
-              const p = layout[it.id] || { xPct: 35, yPct: 25, scale: 0.85, z: 2, rot: 0 };
-              const visual = it.photo
-                ? `<img src="${getCutoutSrc(it.photo)}" alt="${escapeHtml(it.name)}" class="w-24 h-24 object-contain pointer-events-none select-none" draggable="false">`
-                : `<div class="w-20 h-20 flex items-center justify-center pointer-events-none">${renderGarmentVisual(it)}</div>`;
-              return `<div class="absolute pointer-events-none" style="left:${p.xPct}%; top:${p.yPct}%; z-index:${p.z || 1}; transform:scale(${(p.scale || 1) * 0.78}) rotate(${p.rot || 0}deg); transform-origin:center center;">${visual}</div>`;
-            }).join('')}
+          <div class="relative aspect-[3/4] w-full overflow-hidden ${!showRealPhoto && useCutoutBg ? 'lookbook-cutout' : ''}" style="background:radial-gradient(circle at 50% 42%, #FDFBF8 0%, #F2EDE5 100%);">
+            ${showRealPhoto
+              ? `<img src="${safePhotoSrc(log.outfitPhoto)}" alt="Logged outfit photo from ${escapeHtml(log.date)}" class="w-full h-full object-cover select-none" draggable="false">`
+              : items.map(it => {
+                  const p = layout[it.id] || { xPct: 35, yPct: 25, scale: 0.85, z: 2, rot: 0 };
+                  const visual = it.photo
+                    ? `<img src="${getCutoutSrc(it.photo)}" alt="${escapeHtml(it.name)}" class="w-24 h-24 object-contain pointer-events-none select-none" draggable="false">`
+                    : `<div class="w-20 h-20 flex items-center justify-center pointer-events-none">${renderGarmentVisual(it)}</div>`;
+                  return `<div class="absolute pointer-events-none" style="left:${p.xPct}%; top:${p.yPct}%; z-index:${p.z || 1}; transform:scale(${(p.scale || 1) * 0.78}) rotate(${p.rot || 0}deg); transform-origin:center center;">${visual}</div>`;
+                }).join('')}
             <span class="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-white/90 backdrop-blur-sm text-[10px] font-medium text-[#575049] border border-[#E8E2D9]">${escapeHtml(log.date)}</span>
             <span class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${worked ? 'bg-[#EEF2ED] text-[#3A523F] border border-[#D2DDD0]' : 'bg-[#FBF1EE] text-[#A6463A] border border-[#EBD2CC]'}">&#9733; ${log.aesthetic}</span>
+            ${hasPhoto ? `<button type="button" data-toggle-log-view="${log.id}" class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-full bg-[#1C1917]/80 hover:bg-[#1C1917] text-white backdrop-blur-sm text-[10px] font-semibold shadow-sm transition">${showRealPhoto ? 'Lookbook Canvas' : 'Outfit Photo'}</button>` : ''}
           </div>
           <div class="px-3.5 py-3 space-y-0.5">
             <h3 class="text-[12.5px] font-medium text-[#1C1917] truncate">${escapeHtml(formatOccasionLabel(log.occasion))} &middot; ${log.temp}&deg;F</h3>
@@ -7143,6 +7167,7 @@
   }
 
   let activeLogDetailId = null;
+  const logCardViewMode = {};
   function closeLogDetail() {
     activeLogDetailId = null;
     const modal = document.getElementById('logDetailModal');
@@ -7178,7 +7203,25 @@
         <span class="px-2.5 py-1 rounded-full text-[10px] font-semibold ${worked ? 'bg-[#EEF2ED] text-[#3A523F]' : 'bg-[#FBF1EE] text-[#A6463A]'}">${worked ? 'Worked Well' : 'Needs Adjustment'}</span>
       </div>
 
-      ${renderInteractiveCardLookbook('log', log.id, items)}
+      ${(() => {
+        const hasPhoto = Boolean(log.outfitPhoto && safePhotoSrc(log.outfitPhoto));
+        const mode = hasPhoto ? (logCardViewMode[log.id] || 'photo') : 'canvas';
+        const switcher = hasPhoto ? `
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[10px] uppercase tracking-wider text-[#8C8278] font-semibold">Outfit Visual</span>
+            <div class="inline-flex rounded-full border border-[#E8E2D9] bg-[#F4EFE8] p-0.5 text-[11px] font-medium">
+              <button type="button" data-set-log-view="${log.id}" data-view-mode="photo" class="px-3 py-0.5 rounded-full transition ${mode === 'photo' ? 'bg-white text-[#1C1917] shadow-xs font-semibold' : 'text-[#78716C] hover:text-[#1C1917]'}">Outfit Photo</button>
+              <button type="button" data-set-log-view="${log.id}" data-view-mode="canvas" class="px-3 py-0.5 rounded-full transition ${mode === 'canvas' ? 'bg-white text-[#1C1917] shadow-xs font-semibold' : 'text-[#78716C] hover:text-[#1C1917]'}">Lookbook Canvas</button>
+            </div>
+          </div>` : '';
+        if (hasPhoto && mode === 'photo') {
+          return `${switcher}
+            <div class="relative aspect-[3/4] w-full rounded-2xl overflow-hidden border border-[#E8E2D9] bg-[#F4EFE8]">
+              <img src="${safePhotoSrc(log.outfitPhoto)}" alt="Outfit photo from ${escapeHtml(log.date)}" class="w-full h-full object-cover">
+            </div>`;
+        }
+        return `${switcher}${renderInteractiveCardLookbook('log', log.id, items)}`;
+      })()}
 
       <div class="grid grid-cols-3 gap-2 text-center bg-white border border-[#E8E2D9] p-3 rounded-2xl text-xs">
         <div><span class="text-[10px] uppercase tracking-wider text-[#8C8278] block">Style</span><strong class="text-[#1C1917]">${log.aesthetic}/5</strong></div>
@@ -7745,8 +7788,48 @@
     }).join('');
   }
 
+  let pendingRatePhoto = '';
+  function renderRatePhotoPreview() {
+    const prev = document.getElementById('rPhotoPreview');
+    const btnRot = document.getElementById('btnRotateRatePhoto90');
+    const btnClr = document.getElementById('btnClearRatePhoto');
+    if (!prev) return;
+    if (pendingRatePhoto) {
+      prev.innerHTML = `<img src="${safePhotoSrc(pendingRatePhoto)}" class="w-full h-full object-cover" alt="Outfit photo preview">`;
+      if (btnRot) btnRot.classList.remove('hidden');
+      if (btnClr) btnClr.classList.remove('hidden');
+    } else {
+      prev.textContent = 'None';
+      if (btnRot) btnRot.classList.add('hidden');
+      if (btnClr) btnClr.classList.add('hidden');
+    }
+  }
+  function compressOutfitLogPhoto(file, callback) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 720;
+        let w = img.width, h = img.height;
+        if (w > h && w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
+        else if (h >= w && h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        callback(canvas.toDataURL('image/jpeg', 0.80));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
   function openRateModal(itemIds, ctx, editLog) {
     pendingRateOutfit = { itemIds, ctx, editLogId: editLog ? editLog.id : null };
+    pendingRatePhoto = (editLog && editLog.outfitPhoto) ? safePhotoSrc(editLog.outfitPhoto) : '';
+    const rPhotoInp = document.getElementById('rPhoto');
+    if (rPhotoInp) rPhotoInp.value = '';
+    renderRatePhotoPreview();
     pendingCulpritIds = new Set(editLog && Array.isArray(editLog.culpritIds) ? editLog.culpritIds : []);
     const names = itemIds.map(id => {
       const live = state.items.find(x => x.id === id);
@@ -9584,6 +9667,14 @@
   const historyListEl = document.getElementById('historyList');
   if (historyListEl) {
     historyListEl.addEventListener('click', e => {
+      const toggleBtn = e.target.closest('[data-toggle-log-view]');
+      if (toggleBtn) {
+        e.stopPropagation();
+        const lid = toggleBtn.dataset.toggleLogView;
+        logCardViewMode[lid] = (logCardViewMode[lid] || 'photo') === 'photo' ? 'canvas' : 'photo';
+        renderHistoryView();
+        return;
+      }
       const card = e.target.closest('[data-open-log]');
       if (card) openLogDetail(card.dataset.openLog);
     });
@@ -9593,6 +9684,14 @@
     document.getElementById('btnCloseLogDetail').addEventListener('click', closeLogDetail);
     logDetailModalEl.addEventListener('click', e => {
       if (e.target === logDetailModalEl) { closeLogDetail(); return; }
+      const viewBtn = e.target.closest('[data-set-log-view]');
+      if (viewBtn) {
+        const lid = viewBtn.dataset.setLogView;
+        logCardViewMode[lid] = viewBtn.dataset.viewMode || 'photo';
+        openLogDetail(lid);
+        renderHistoryView();
+        return;
+      }
       const loadBtn = e.target.closest('[data-load-log-board]');
       if (loadBtn) {
         const log = state.outfitLogs.find(l => l.id === loadBtn.dataset.loadLogBoard);
@@ -9790,6 +9889,36 @@
       status.textContent = 'Weather fetch failed—enter temperature manually above.';
     }
   });
+  const rPhotoInputEl = document.getElementById('rPhoto');
+  if (rPhotoInputEl) {
+    rPhotoInputEl.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      compressOutfitLogPhoto(file, dataUrl => {
+        pendingRatePhoto = dataUrl;
+        renderRatePhotoPreview();
+      });
+    });
+  }
+  const btnRotRateEl = document.getElementById('btnRotateRatePhoto90');
+  if (btnRotRateEl) {
+    btnRotRateEl.addEventListener('click', async () => {
+      if (!pendingRatePhoto) return;
+      try {
+        pendingRatePhoto = await rotateImageDataUrl90(pendingRatePhoto);
+        renderRatePhotoPreview();
+      } catch (_) {}
+    });
+  }
+  const btnClearRateEl = document.getElementById('btnClearRatePhoto');
+  if (btnClearRateEl) {
+    btnClearRateEl.addEventListener('click', () => {
+      pendingRatePhoto = '';
+      if (rPhotoInputEl) rPhotoInputEl.value = '';
+      renderRatePhotoPreview();
+    });
+  }
+
   document.getElementById('rateForm').addEventListener('submit', e => {
     e.preventDefault();
     if (!pendingRateOutfit) return;
@@ -9823,6 +9952,7 @@
         target.comfort = comfVal;
         target.thermal = thermVal;
         target.culpritIds = culpritArr;
+        target.outfitPhoto = pendingRatePhoto || '';
         target.notes = notesVal;
         if (pVal.startsWith('yest_')) target.date = logDate;
       }
@@ -9847,6 +9977,7 @@
           if (lookbookLayout[id]) acc[id] = { ...lookbookLayout[id] };
           return acc;
         }, {}),
+        outfitPhoto: pendingRatePhoto || '',
         notes: notesVal
       });
       pendingRateOutfit.itemIds.forEach(id => {
