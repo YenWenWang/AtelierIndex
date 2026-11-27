@@ -3433,8 +3433,12 @@
     const T_ideal_upper = Math.max(12, Math.min(90, T_upper_clo + tPred.deltaT));
     const T_ideal_lower = Math.max(12, Math.min(90, T_lower_clo + tPred.deltaT));
     const quadThermal = (diff, sigma, deadband = 2) => {
+      const extremity = Math.max(-1, Math.min(1, (65 - temp) / 25));
+      const isSafeOvershoot = (diff > 0 && extremity > 0) || (diff < 0 && extremity < 0);
+      const hotRelief = temp > 78 ? Math.min(6, (temp - 78) * 0.45) : 0;
+      const effSigma = (isSafeOvershoot ? (sigma + 12 * Math.abs(extremity)) : sigma) + hotRelief;
       const d = Math.max(0, Math.abs(diff) - deadband);
-      return Math.min(100, Math.round(100 - 25 * Math.pow(d / sigma, 2)));
+      return Math.min(100, Math.round(100 - 25 * Math.pow(d / effSigma, 2)));
     };
     const sBody = quadThermal(temp - tPred.T_ideal, 8, 2);
     let thermalScore = Math.max(5, sBody);
