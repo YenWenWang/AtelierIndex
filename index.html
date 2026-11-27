@@ -2869,13 +2869,13 @@
     if (cat === 'bottom' || cat === 'shoes') return { upperW: 0.0, lowerW: 1.0, thermalMult: 1.0 };
 
     if (cat === 'accessory') {
-      if (/(tie|necktie|belt|bag|tote|backpack|messenger|watch|sunglass|ring|necklace|bracelet|bandana|wallet|clutch)/i.test(nameL)) {
+      if (/\b(tie|necktie|belt|bag|tote|backpack|messenger|watch|sunglass|ring|necklace|bracelet|bandana|wallet|clutch)\b/i.test(nameL)) {
         return { upperW: 0.0, lowerW: 0.0, thermalMult: 0.0 };
       }
-      if (/(scarf|beanie|hat|cap|glove|mitten|earmuff|balaclava|shawl)/i.test(nameL)) {
+      if (/\b(scarf|beanie|hat|cap|glove|mitten|earmuff|balaclava|shawl)\b/i.test(nameL)) {
         return { upperW: 1.0, lowerW: 0.0, thermalMult: 1.0 };
       }
-      if (/(sock|tights|legging|warmer)/i.test(nameL)) {
+      if (/\b(sock|tights|legging|warmer)\b/i.test(nameL)) {
         return { upperW: 0.0, lowerW: 1.0, thermalMult: 1.0 };
       }
       if (hasClip && clipEngine.accThermalPromptEmbeddings && clipEngine.accThermalPromptEmbeddings.length === 3) {
@@ -2898,9 +2898,9 @@
           lowerW += probs[i] * (cat === 'fullbody' ? CLIP_LENGTH_PROMPTS[i].fbLower : CLIP_LENGTH_PROMPTS[i].lowerFrac);
         }
       } else if (cat === 'outerwear') {
-        if (/(overcoat|trench|duffle|maxi|longline|cape|duster)/i.test(nameL)) lowerW = 0.05;
+        if (/\b(overcoat|trench|duffle|maxi|longline|cape|duster)\b/i.test(nameL)) lowerW = 0.05;
         else lowerW = 0.00;
-      } else if (/(mini)/i.test(nameL)) {
+      } else if (/\b(mini)\b/i.test(nameL)) {
         lowerW = 0.35;
       }
       return { upperW: 1 - lowerW, lowerW, thermalMult: 1.0 };
@@ -3432,15 +3432,15 @@
     const T_ideal = Math.round(tPred.T_ideal);
     const T_ideal_upper = Math.max(12, Math.min(90, T_upper_clo + tPred.deltaT));
     const T_ideal_lower = Math.max(12, Math.min(90, T_lower_clo + tPred.deltaT));
-    const quadThermal = (diff, sigma, deadband = 3) => {
+    const quadThermal = (diff, sigma, deadband = 2) => {
       const d = Math.max(0, Math.abs(diff) - deadband);
       return Math.max(5, Math.min(100, Math.round(100 - 25 * Math.pow(d / sigma, 2))));
     };
-    const sBody = quadThermal(temp - tPred.T_ideal, 12, 3);
+    const sBody = quadThermal(temp - tPred.T_ideal, 8, 2);
     let thermalScore = sBody;
     let sLow = 100;
     if (hasUpper && hasLower) {
-      sLow = quadThermal(temp - T_ideal_lower, 12, 3);
+      sLow = quadThermal(temp - T_ideal_lower, 8, 2);
       thermalScore = Math.max(5, Math.min(100, Math.round(0.60 * sBody + 0.40 * sLow)));
     }
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
@@ -5111,7 +5111,11 @@
     const outers = items.filter(i => i.category === 'outerwear').sort((a, b) => getItemClo(b) - getItemClo(a));
     layers.push(...outers);
 
-    const warmAccs = items.filter(i => i.category === 'accessory' && (getItemClo(i) >= 0.05 || Number(effAttr(i, 'warmth', 1)) >= 3));
+    const warmAccs = items.filter(i => {
+      if (i.category !== 'accessory') return false;
+      const split = getItemZoneSplit(i);
+      return split.thermalMult > 0 && (getItemClo(i) * split.thermalMult >= 0.05 || Number(effAttr(i, 'warmth', 1)) >= 3);
+    });
     layers.push(...warmAccs);
 
     const tops = items.filter(i => i.category === 'top');
