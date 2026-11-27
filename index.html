@@ -1685,9 +1685,9 @@
 
   // Zero-shot garment length & accessory thermal prompts for Two-Zone (Upper / Lower) thermal modeling
   const CLIP_LENGTH_PROMPTS = [
-    { lowerFrac: 0.05, fbLower: 0.35, text: 'short cropped waist-length jacket blazer bomber or mini dress above hips' },
-    { lowerFrac: 0.22, fbLower: 0.48, text: 'mid-thigh length parka field jacket peacoat or knee-length dress' },
-    { lowerFrac: 0.36, fbLower: 0.55, text: 'long knee-length or ankle-length wool overcoat trench coat maxi dress or full jumpsuit' }
+    { lowerFrac: 0.00, fbLower: 0.35, text: 'short cropped waist-length jacket blazer bomber or mini dress above hips' },
+    { lowerFrac: 0.02, fbLower: 0.48, text: 'mid-thigh length parka field jacket peacoat or knee-length dress' },
+    { lowerFrac: 0.06, fbLower: 0.55, text: 'long knee-length or ankle-length wool overcoat trench coat maxi dress or full jumpsuit' }
   ];
 
   const CLIP_ACC_THERMAL_PROMPTS = [
@@ -2889,7 +2889,7 @@
     }
 
     if (cat === 'outerwear' || cat === 'fullbody') {
-      let lowerW = cat === 'fullbody' ? 0.50 : 0.10;
+      let lowerW = cat === 'fullbody' ? 0.50 : 0.00;
       if (hasClip && clipEngine.lengthPromptEmbeddings && clipEngine.lengthPromptEmbeddings.length === CLIP_LENGTH_PROMPTS.length) {
         const sims = clipEngine.lengthPromptEmbeddings.map(v => cosineSimilarity(item.clipEmbedding, v));
         const probs = softmax(sims, 0.035);
@@ -2898,9 +2898,8 @@
           lowerW += probs[i] * (cat === 'fullbody' ? CLIP_LENGTH_PROMPTS[i].fbLower : CLIP_LENGTH_PROMPTS[i].lowerFrac);
         }
       } else if (cat === 'outerwear') {
-        if (/(overcoat|trench|duffle|maxi|longline|cape|duster)/i.test(nameL)) lowerW = 0.35;
-        else if (/(parka|field|peacoat|anorak)/i.test(nameL)) lowerW = 0.22;
-        else lowerW = 0.08;
+        if (/(overcoat|trench|duffle|maxi|longline|cape|duster)/i.test(nameL)) lowerW = 0.05;
+        else lowerW = 0.00;
       } else if (/(mini)/i.test(nameL)) {
         lowerW = 0.35;
       }
@@ -3433,16 +3432,15 @@
     const T_ideal = Math.round(tPred.T_ideal);
     const T_ideal_upper = Math.max(12, Math.min(90, T_upper_clo + tPred.deltaT));
     const T_ideal_lower = Math.max(12, Math.min(90, T_lower_clo + tPred.deltaT));
-    const quadThermal = (diff, sigmaCold, sigmaWarm = sigmaCold, deadband = 3) => {
-      const sigma = diff < 0 ? sigmaCold : sigmaWarm;
+    const quadThermal = (diff, sigma, deadband = 3) => {
       const d = Math.max(0, Math.abs(diff) - deadband);
       return Math.max(5, Math.min(100, Math.round(100 - 25 * Math.pow(d / sigma, 2))));
     };
-    const sBody = quadThermal(temp - tPred.T_ideal, 9, 16, 3);
+    const sBody = quadThermal(temp - tPred.T_ideal, 12, 3);
     let thermalScore = sBody;
     let sLow = 100;
     if (hasUpper && hasLower) {
-      sLow = quadThermal(temp - T_ideal_lower, 9, 16, 3);
+      sLow = quadThermal(temp - T_ideal_lower, 12, 3);
       thermalScore = Math.max(5, Math.min(100, Math.round(0.60 * sBody + 0.40 * sLow)));
     }
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
