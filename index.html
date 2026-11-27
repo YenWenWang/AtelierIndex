@@ -3433,15 +3433,16 @@
     const T_ideal = Math.round(tPred.T_ideal);
     const T_ideal_upper = Math.max(12, Math.min(90, T_upper_clo + tPred.deltaT));
     const T_ideal_lower = Math.max(12, Math.min(90, T_lower_clo + tPred.deltaT));
-    const tempDiff = Math.abs(temp - tPred.T_ideal);
-    let thermalScore = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, tempDiff - 3) * 3.1)));
-    let zoneImbalance = 0;
+    const quadThermal = (diff, sigma, deadband = 3) => {
+      const d = Math.max(0, Math.abs(diff) - deadband);
+      return Math.max(5, Math.min(100, Math.round(100 - 25 * Math.pow(d / sigma, 2))));
+    };
+    const sBody = quadThermal(temp - tPred.T_ideal, 13, 3);
+    let thermalScore = sBody;
+    let sLow = 100;
     if (hasUpper && hasLower) {
-      const sUp = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, Math.abs(temp - T_ideal_upper) - 3) * 3.1)));
-      const sLow = Math.max(5, Math.min(100, Math.round(100 - Math.max(0, Math.abs(temp - T_ideal_lower) - 3) * 3.1)));
-      zoneImbalance = Math.round(Math.abs(T_ideal_upper - T_ideal_lower));
-      const imbPenalty = zoneImbalance > 18 ? Math.round((zoneImbalance - 18) * 0.65) : 0;
-      thermalScore = Math.max(5, Math.min(100, Math.round(0.65 * Math.min(sUp, sLow) + 0.35 * ((sUp + sLow) / 2) - imbPenalty)));
+      sLow = quadThermal(temp - T_ideal_lower, 18, 3);
+      thermalScore = Math.max(5, Math.min(100, Math.round(0.75 * sBody + 0.25 * sLow)));
     }
     const hasRainGear = items.some(it => Number(effAttr(it, 'rain', 0)) === 1);
     const hasHeavyOuterwear = items.some(it => it.category === 'outerwear' && Number(effAttr(it, 'warmth', 3)) >= 4);
@@ -3624,8 +3625,8 @@
     else if (thermalScore >= 82) reasons.push(`${sweetSpotStr} — matches ${temp}°F well.`);
     else if (temp < tPred.T_ideal) reasons.push(`${sweetSpotStr} — may feel cool at ${temp}°F; add a warmer layer.`);
     else reasons.push(`${sweetSpotStr} — may feel warm at ${temp}°F; try a lighter layer.`);
-    if (hasUpper && hasLower && zoneImbalance > 18) {
-      reasons.push(`Upper/lower warmth imbalance (${zoneImbalance}°F gap: Upper ~${Math.round(T_ideal_upper)}°F vs. Lower ~${Math.round(T_ideal_lower)}°F).`);
+    if (hasUpper && hasLower && sLow < 55) {
+      reasons.push(`Bottoms may feel ${temp < T_ideal_lower ? 'too thin/cool' : 'too heavy/warm'} at ${temp}°F (Lower ~${Math.round(T_ideal_lower)}°F).`);
     }
 
     if (minComfort <= 2) reasons.push(`Dragged down by a low-comfort piece (${items.find(i => i.comfort <= 2).name}).`);
@@ -5158,7 +5159,7 @@
       const removedIds = new Set(removed.map(x => x.id));
       const kept = items.filter(x => !removedIds.has(x.id));
       if (kept.length < 2) break;
-      const evH = evaluateOutfit(kept, { temp: tHigh, weather: 'clear', occasion: ctx.occasion }, precomputed);
+      const evH = evaluateOutfit(kept, { temp: tHigh, weather: tHigh >= 65 ? 'indoor' : 'clear', occasion: ctx.occasion }, precomputed);
       const obj = evH.weatherScore * 0.60 + evH.styleScore * 0.40;
       if (!bestHigh || obj > bestHigh.obj) {
         bestHigh = { ev: evH, removed, obj };
@@ -5170,7 +5171,7 @@
     const combinedWeather = Math.round(
       evLow.weatherScore * 0.45 + bestHigh.ev.weatherScore * 0.45 + Math.min(evLow.weatherScore, bestHigh.ev.weatherScore) * 0.10
     );
-    const combinedScore = Math.round(combinedStyle * 0.62 + combinedWeather * 0.38);
+    const combinedScore = Math.round(combinedStyle * 0.50 + combinedWeather * 0.30 + (evLow.comfortScore || 75) * 0.20);
 
     return {
       ...evLow,
