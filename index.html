@@ -1469,8 +1469,12 @@
       <h2 class="text-base font-bold text-slate-900">Log &amp; Rate Outfit Feedback</h2>
       <button type="button" id="btnCloseRateModal" class="text-slate-400 hover:text-slate-700 text-lg font-bold px-2">&times;</button>
     </div>
-    <div id="rateOutfitSummary" class="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200"></div>
+    <div id="rateOutfitSummary" class="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2"></div>
     <form id="rateForm" class="space-y-3">
+      <div class="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+        <label for="rDate" class="text-xs font-semibold text-slate-700">Date Worn</label>
+        <input type="date" id="rDate" required class="px-2.5 py-1 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-800">
+      </div>
       <!-- Logged Environment: Outdoor / Indoor first, then Weather Fetch or Indoor A/C -->
       <div class="p-3 rounded-xl bg-blue-50/60 border border-blue-200 space-y-2">
         <div class="flex items-center justify-between gap-2">
@@ -7824,20 +7828,58 @@
     reader.readAsDataURL(file);
   }
 
+  function renderRatePiecesEditor() {
+    const box = document.getElementById('rateOutfitSummary');
+    if (!box || !pendingRateOutfit) return;
+    const ids = pendingRateOutfit.itemIds || [];
+    const snaps = pendingRateOutfit.editLogSnapshots || {};
+    const chipsHtml = ids.map(id => {
+      const live = state.items.find(x => x.id === id);
+      const snap = snaps[id];
+      const name = live ? live.name : (snap ? `${snap.name} (removed)` : id);
+      const hex = safeHex(live ? live.colorHex : (snap ? snap.colorHex : '#64748b'));
+      return `<span class="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-white border border-slate-300 text-[11px] font-medium text-slate-800">
+        <span class="w-2 h-2 rounded-full border border-slate-300 shrink-0" style="background:${hex}"></span>
+        <span>${escapeHtml(name)}</span>
+        <button type="button" data-rate-remove-item="${escapeHtml(id)}" class="w-4 h-4 rounded-full hover:bg-rose-100 text-slate-400 hover:text-rose-700 inline-flex items-center justify-center text-xs leading-none" title="Remove piece">&times;</button>
+      </span>`;
+    }).join('');
+    const avail = state.items
+      .filter(it => it.status !== 'donated' && !ids.includes(it.id))
+      .sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+    const optionsHtml = avail.map(it => `<option value="${escapeHtml(it.id)}">[${escapeHtml(it.category || 'piece')}] ${escapeHtml(it.name)}${it.status !== 'owned' ? ` (${escapeHtml(it.status)})` : ''}</option>`).join('');
+    box.innerHTML = `
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-[11px] font-semibold text-slate-700">Pieces in Outfit (${ids.length})</span>
+        ${pendingRateOutfit.editLogId ? `<span class="text-[10px] font-semibold text-blue-800">Editing Log</span>` : ''}
+      </div>
+      <div class="flex flex-wrap gap-1.5">${chipsHtml || '<span class="text-[11px] text-rose-700">No pieces selected — add at least one below.</span>'}</div>
+      ${avail.length ? `
+        <div class="flex items-center gap-1.5 pt-1">
+          <select id="rAddItemSelect" class="flex-1 min-w-0 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] text-slate-800">
+            <option value="">+ Add clothing piece...</option>
+            ${optionsHtml}
+          </select>
+          <button type="button" id="btnRateAddItem" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold shrink-0">Add</button>
+        </div>` : ''}
+    `;
+  }
+
   function openRateModal(itemIds, ctx, editLog) {
-    pendingRateOutfit = { itemIds, ctx, editLogId: editLog ? editLog.id : null };
+    pendingRateOutfit = {
+      itemIds: Array.isArray(itemIds) ? [...itemIds] : [],
+      ctx,
+      editLogId: editLog ? editLog.id : null,
+      editLogSnapshots: (editLog && editLog.itemSnapshots) ? { ...editLog.itemSnapshots } : {}
+    };
     pendingRatePhoto = (editLog && editLog.outfitPhoto) ? safePhotoSrc(editLog.outfitPhoto) : '';
     const rPhotoInp = document.getElementById('rPhoto');
     if (rPhotoInp) rPhotoInp.value = '';
     renderRatePhotoPreview();
     pendingCulpritIds = new Set(editLog && Array.isArray(editLog.culpritIds) ? editLog.culpritIds : []);
-    const names = itemIds.map(id => {
-      const live = state.items.find(x => x.id === id);
-      if (live) return live.name;
-      const snap = editLog && editLog.itemSnapshots && editLog.itemSnapshots[id];
-      return snap ? snap.name : '';
-    }).filter(Boolean);
-    document.getElementById('rateOutfitSummary').innerHTML = `<strong>${names.map(escapeHtml).join(' + ')}</strong>${editLog ? `<br><span class="text-[11px] text-blue-800">Editing log from ${escapeHtml(editLog.date)}</span>` : ''}`;
+    renderRatePiecesEditor();
+    const rDateEl = document.getElementById('rDate');
+    if (rDateEl) rDateEl.value = (editLog && editLog.date) ? editLog.date : formatLocalDate();
     document.getElementById('rCity').value = getSavedCity();
     document.getElementById('rPeriod').value = 'today_now';
     const initW = editLog ? editLog.weather : ctx.weather;
@@ -9919,32 +9961,77 @@
     });
   }
 
+  const rateSummaryEl = document.getElementById('rateOutfitSummary');
+  if (rateSummaryEl) {
+    rateSummaryEl.addEventListener('click', e => {
+      if (!pendingRateOutfit) return;
+      const remBtn = e.target.closest('[data-rate-remove-item]');
+      if (remBtn) {
+        const rid = remBtn.dataset.rateRemoveItem;
+        pendingRateOutfit.itemIds = pendingRateOutfit.itemIds.filter(x => x !== rid);
+        pendingCulpritIds.delete(rid);
+        renderRatePiecesEditor();
+        renderRateCulpritPills();
+        return;
+      }
+      if (e.target.closest('#btnRateAddItem')) {
+        const sel = document.getElementById('rAddItemSelect');
+        const aid = sel ? sel.value : '';
+        if (aid && !pendingRateOutfit.itemIds.includes(aid)) {
+          pendingRateOutfit.itemIds.push(aid);
+          renderRatePiecesEditor();
+          renderRateCulpritPills();
+        }
+      }
+    });
+  }
+  const rPeriodEl = document.getElementById('rPeriod');
+  if (rPeriodEl) {
+    rPeriodEl.addEventListener('change', () => {
+      const rDateEl = document.getElementById('rDate');
+      if (!rDateEl) return;
+      const dObj = new Date();
+      if ((rPeriodEl.value || '').startsWith('yest_')) dObj.setDate(dObj.getDate() - 1);
+      rDateEl.value = formatLocalDate(dObj);
+    });
+  }
+
   document.getElementById('rateForm').addEventListener('submit', e => {
     e.preventDefault();
     if (!pendingRateOutfit) return;
+    if (!pendingRateOutfit.itemIds.length) {
+      showToast('Add at least 1 clothing piece to save this outfit log.');
+      return;
+    }
     const pVal = document.getElementById('rPeriod').value || 'today_now';
     const dObj = new Date();
     if (pVal.startsWith('yest_')) dObj.setDate(dObj.getDate() - 1);
-    const logDate = formatLocalDate(dObj);
+    const pickedDate = String((document.getElementById('rDate') && document.getElementById('rDate').value) || '').trim();
+    const logDate = /^\d{4}-\d{2}-\d{2}$/.test(pickedDate) ? pickedDate : formatLocalDate(dObj);
     const rawTempStr = String(document.getElementById('rTemp').value || '').trim();
     const parsedTemp = rawTempStr === '' ? NaN : Number(rawTempStr);
     const loggedTemp = isFinite(parsedTemp) ? parsedTemp : pendingRateOutfit.ctx.temp;
     const loggedWeather = rateEnvMode === 'indoor' ? 'indoor' : (document.getElementById('rWeather').value || 'clear');
     const itemSnapshots = {};
+    const prevSnaps = pendingRateOutfit.editLogSnapshots || {};
     pendingRateOutfit.itemIds.forEach(id => {
       const it = state.items.find(x => x.id === id);
       if (it) itemSnapshots[id] = { name: it.name, colorHex: safeHex(it.colorHex), category: it.category };
+      else if (prevSnaps[id]) itemSnapshots[id] = { ...prevSnaps[id] };
     });
     const occVal = String(normalizeOccasionFormality(document.getElementById('rOccasion').value || pendingRateOutfit.ctx.occasion));
     const aesVal = Number(document.getElementById('rAesthetic').value);
     const comfVal = Number(document.getElementById('rComfort').value);
     const thermVal = document.getElementById('rThermal').value;
     const notesVal = document.getElementById('rNotes').value.trim();
-    const culpritArr = Array.from(pendingCulpritIds);
+    const culpritArr = Array.from(pendingCulpritIds).filter(id => pendingRateOutfit.itemIds.includes(id));
 
     if (pendingRateOutfit.editLogId) {
       const target = state.outfitLogs.find(l => l.id === pendingRateOutfit.editLogId);
       if (target) {
+        target.date = logDate;
+        target.itemIds = [...pendingRateOutfit.itemIds];
+        target.itemSnapshots = itemSnapshots;
         target.temp = loggedTemp;
         target.weather = loggedWeather;
         target.occasion = occVal;
@@ -9954,8 +10041,8 @@
         target.culpritIds = culpritArr;
         target.outfitPhoto = pendingRatePhoto || '';
         target.notes = notesVal;
-        if (pVal.startsWith('yest_')) target.date = logDate;
       }
+      state.outfitLogs.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
       saveState();
       closeRateModal();
       renderAll();
