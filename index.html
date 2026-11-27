@@ -3444,8 +3444,9 @@
     let thermalScore = Math.max(5, sBody);
     let sLow = 100;
     if (hasUpper && hasLower) {
-      const lowSigma = weather === 'indoor' ? 16 : 8;
-      const lowWeight = weather === 'indoor' ? 0.15 : 0.40;
+      const coldFrac = Math.max(0, Math.min(1, (65 - temp) / 30));
+      const lowSigma = 16 - 8 * coldFrac;
+      const lowWeight = 0.15 + 0.25 * coldFrac;
       sLow = quadThermal(temp - T_ideal_lower, lowSigma, 2);
       thermalScore = Math.max(5, Math.min(100, Math.round((1 - lowWeight) * sBody + lowWeight * sLow)));
     }
