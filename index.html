@@ -8522,13 +8522,27 @@
     document.getElementById('tempHighWrap').classList.toggle('hidden', !e.target.checked);
     renderMatcherView();
   });
-  document.getElementById('tempHighInput').addEventListener('input', renderMatcherView);
+  let tempHighTimer = null;
+  document.getElementById('tempHighInput').addEventListener('input', () => {
+    clearTimeout(tempHighTimer);
+    tempHighTimer = setTimeout(renderMatcherView, 250);
+  });
+  document.getElementById('tempHighInput').addEventListener('change', () => {
+    clearTimeout(tempHighTimer);
+    renderMatcherView();
+  });
   document.getElementById('btnSetIndoor70').addEventListener('click', () => {
+    clearTimeout(tempHighTimer);
     document.getElementById('tempHighInput').value = 70;
     renderMatcherView();
   });
-  ['tempSlider', 'weatherSelect', 'occasionSelect', 'toggleIncludeWishlist', 'togglePairingWishlist'].forEach(id => {
-    document.getElementById(id).addEventListener('input', renderMatcherView);
+  document.getElementById('tempSlider').addEventListener('input', e => {
+    const val = Number(e.target.value);
+    const disp = document.getElementById('tempDisplay');
+    if (disp) disp.textContent = ctxEnvMode === 'indoor' ? `${val}°F (Indoor)` : `${val}°F`;
+  });
+  document.getElementById('tempSlider').addEventListener('change', renderMatcherView);
+  ['weatherSelect', 'occasionSelect', 'toggleIncludeWishlist', 'togglePairingWishlist'].forEach(id => {
     document.getElementById(id).addEventListener('change', renderMatcherView);
   });
   document.getElementById('builderSearch').addEventListener('input', renderMatcherView);
@@ -10915,7 +10929,11 @@
     });
   }
 
-  document.getElementById('retireThresholdSlider').addEventListener('input', renderRetireView);
+  document.getElementById('retireThresholdSlider').addEventListener('input', e => {
+    const valEl = document.getElementById('retireThresholdVal');
+    if (valEl) valEl.textContent = `${e.target.value}%`;
+  });
+  document.getElementById('retireThresholdSlider').addEventListener('change', renderRetireView);
 
   document.getElementById('weatherCity').addEventListener('change', e => setSavedCity(e.target.value));
   document.getElementById('rCity').addEventListener('change', e => setSavedCity(e.target.value));
